@@ -56,6 +56,34 @@ class ChatConsumerTests(TransactionTestCase):
 
         async_to_sync(scenario)()
 
+    def test_conversation_read_event_marks_membership_read(self):
+        Message.objects.create(
+            conversation=self.conversation,
+            author=self.bob,
+            content='Unread',
+        )
+
+        async def scenario():
+            socket, connected, _ = await self.connect(
+                self.socket_path(token=self.alice_token)
+            )
+            self.assertTrue(connected)
+            await socket.send_json_to({'type': 'conversation.read'})
+            event = await socket.receive_json_from()
+            self.assertEqual(event, {
+                'type': 'conversation.read',
+                'conversation': self.conversation.pk,
+                'unread_count': 0,
+            })
+            await socket.disconnect()
+
+        async_to_sync(scenario)()
+        membership = ConversationMember.objects.get(
+            conversation=self.conversation,
+            user=self.alice,
+        )
+        self.assertIsNotNone(membership.last_read_at)
+
     def test_connection_without_token_is_rejected(self):
         async def scenario():
             socket, connected, close_code = await self.connect(self.socket_path())

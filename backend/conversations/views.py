@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -12,15 +13,17 @@ from .serializers import (
     CreateGroupConversationSerializer,
     CreatePrivateConversationSerializer,
 )
+from .unread import with_unread_count
 
 
 def conversations_for(user):
-    return (
+    queryset = (
         Conversation.objects.filter(memberships__user=user)
         .select_related('created_by')
         .prefetch_related('memberships__user')
         .distinct()
     )
+    return with_unread_count(queryset, user)
 
 
 class ConversationListView(generics.ListAPIView):
@@ -50,7 +53,10 @@ class CreatePrivateConversationView(APIView):
             status.HTTP_201_CREATED if serializer.was_created else status.HTTP_200_OK
         )
         return Response(
-            ConversationSerializer(conversation).data,
+            ConversationSerializer(
+                conversation,
+                context={'request': request},
+            ).data,
             status=response_status,
         )
 
@@ -64,7 +70,10 @@ class CreateGroupConversationView(APIView):
         serializer.is_valid(raise_exception=True)
         conversation = serializer.save()
         return Response(
-            ConversationSerializer(conversation).data,
+            ConversationSerializer(
+                conversation,
+                context={'request': request},
+            ).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -88,9 +97,29 @@ class AddConversationMemberView(APIView):
         serializer.is_valid(raise_exception=True)
         membership = serializer.save()
         return Response(
-            ConversationSerializer(membership.conversation).data,
+            ConversationSerializer(
+                membership.conversation,
+                context={'request': request},
+            ).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class MarkConversationReadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        membership = get_object_or_404(
+            ConversationMember,
+            conversation_id=pk,
+            user=request.user,
+        )
+        membership.last_read_at = timezone.now()
+        membership.save(update_fields=('last_read_at',))
+        return Response({
+            'conversation': pk,
+            'unread_count': 0,
+        })
 
 
 class RemoveConversationMemberView(APIView):

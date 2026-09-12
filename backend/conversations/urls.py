@@ -6,6 +6,7 @@ from .views import (
     ConversationListView,
     CreateGroupConversationView,
     CreatePrivateConversationView,
+    MarkConversationReadView,
     RemoveConversationMemberView,
 )
 
@@ -17,6 +18,7 @@ urlpatterns = [
     path('private/', CreatePrivateConversationView.as_view(), name='create-private'),
     path('group/', CreateGroupConversationView.as_view(), name='create-group'),
     path('<int:pk>/', ConversationDetailView.as_view(), name='detail'),
+    path('<int:pk>/read/', MarkConversationReadView.as_view(), name='mark-read'),
     path('<int:pk>/members/', AddConversationMemberView.as_view(), name='add-member'),
     path(
         '<int:pk>/members/<int:user_id>/',
