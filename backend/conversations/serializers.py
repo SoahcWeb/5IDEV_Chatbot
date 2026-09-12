@@ -4,6 +4,7 @@ from django.db.models import Count, Q
 from rest_framework import serializers
 
 from .models import Conversation, ConversationMember
+from .unread import unread_count_for
 
 
 User = get_user_model()
@@ -20,6 +21,7 @@ class ConversationMemberSerializer(serializers.ModelSerializer):
 
 class ConversationSerializer(serializers.ModelSerializer):
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+    unread_count = serializers.SerializerMethodField()
     members = ConversationMemberSerializer(
         source='memberships',
         many=True,
@@ -36,7 +38,17 @@ class ConversationSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             'members',
+            'unread_count',
         )
+
+    def get_unread_count(self, obj):
+        if hasattr(obj, 'unread_count'):
+            return obj.unread_count
+
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return 0
+        return unread_count_for(obj, request.user)
 
 
 class CreatePrivateConversationSerializer(serializers.Serializer):

@@ -2,6 +2,7 @@ import json
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from django.utils import timezone
 
 from conversations.models import Conversation, ConversationMember
 
@@ -53,6 +54,20 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     async def receive_json(self, content, **kwargs):
         if not isinstance(content, dict):
             await self.send_error('invalid_payload', 'A JSON object is required.')
+            return
+        if content.get('type') == 'conversation.read':
+            was_updated = await self.mark_conversation_read(self.scope['user'])
+            if not was_updated:
+                await self.send_error(
+                    'forbidden',
+                    'Conversation membership is required.',
+                )
+                return
+            await self.send_json({
+                'type': 'conversation.read',
+                'conversation': self.conversation_id,
+                'unread_count': 0,
+            })
             return
         if content.get('type') != 'message.send':
             await self.send_error('unsupported_event', 'Unsupported event type.')
@@ -117,3 +132,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             'conversation',
         ).get(pk=message.pk)
         return MessageSerializer(message).data, None
+
+    @database_sync_to_async
+    def mark_conversation_read(self, user):
+        updated = ConversationMember.objects.filter(
+            conversation_id=self.conversation_id,
+            user=user,
+        ).update(last_read_at=timezone.now())
+        return updated == 1

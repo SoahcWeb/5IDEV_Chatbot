@@ -1,7 +1,12 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+
+from messaging.models import Message
 
 from .models import Conversation, ConversationMember
 
@@ -240,3 +245,115 @@ class ConversationAPITests(APITestCase):
         self.assertTrue(
             all(response.status_code == status.HTTP_401_UNAUTHORIZED for response in requests)
         )
+
+
+class ConversationUnreadTests(APITestCase):
+    def setUp(self):
+        self.alice = User.objects.create_user('unread-alice', password='password')
+        self.bob = User.objects.create_user('unread-bob', password='password')
+        self.charlie = User.objects.create_user('unread-charlie', password='password')
+        self.conversation = self.create_conversation(self.alice, self.bob)
+        self.authenticate(self.alice)
+
+    def authenticate(self, user):
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+
+    def create_conversation(self, first, second):
+        conversation = Conversation.objects.create(
+            type=Conversation.Type.PRIVATE,
+            created_by=first,
+        )
+        ConversationMember.objects.bulk_create([
+            ConversationMember(conversation=conversation, user=first),
+            ConversationMember(conversation=conversation, user=second),
+        ])
+        return conversation
+
+    def create_message(self, author, conversation=None, content='Hello'):
+        return Message.objects.create(
+            conversation=conversation or self.conversation,
+            author=author,
+            content=content,
+        )
+
+    def conversation_data(self, conversation=None):
+        conversation = conversation or self.conversation
+        response = self.client.get(f'/api/conversations/{conversation.pk}/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data
+
+    def test_unread_count_is_zero_without_messages(self):
+        self.assertEqual(self.conversation_data()['unread_count'], 0)
+
+    def test_other_users_messages_are_unread_when_never_read(self):
+        self.create_message(self.bob)
+        self.create_message(self.bob)
+        self.assertEqual(self.conversation_data()['unread_count'], 2)
+
+    def test_own_message_is_not_unread(self):
+        self.create_message(self.alice)
+        self.assertEqual(self.conversation_data()['unread_count'], 0)
+
+    def test_mark_read_resets_unread_count(self):
+        self.create_message(self.bob)
+
+        response = self.client.post(
+            f'/api/conversations/{self.conversation.pk}/read/'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {
+            'conversation': self.conversation.pk,
+            'unread_count': 0,
+        })
+        self.assertEqual(self.conversation_data()['unread_count'], 0)
+        membership = ConversationMember.objects.get(
+            conversation=self.conversation,
+            user=self.alice,
+        )
+        self.assertIsNotNone(membership.last_read_at)
+
+    def test_non_member_cannot_mark_conversation_read(self):
+        self.authenticate(self.charlie)
+        response = self.client.post(
+            f'/api/conversations/{self.conversation.pk}/read/'
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_list_exposes_counts_for_multiple_conversations(self):
+        other = self.create_conversation(self.alice, self.charlie)
+        self.create_message(self.bob)
+        self.create_message(self.charlie, conversation=other)
+        self.create_message(self.charlie, conversation=other)
+
+        response = self.client.get('/api/conversations/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        counts = {item['id']: item['unread_count'] for item in response.data}
+        self.assertEqual(counts, {self.conversation.pk: 1, other.pk: 2})
+
+    def test_only_messages_after_last_read_are_counted(self):
+        old_message = self.create_message(self.bob, content='Old')
+        cutoff = timezone.now()
+        membership = ConversationMember.objects.get(
+            conversation=self.conversation,
+            user=self.alice,
+        )
+        membership.last_read_at = cutoff
+        membership.save(update_fields=('last_read_at',))
+        Message.objects.filter(pk=old_message.pk).update(
+            created_at=cutoff - timedelta(minutes=1)
+        )
+        self.create_message(self.bob, content='New')
+
+        self.assertEqual(self.conversation_data()['unread_count'], 1)
+
+    def test_list_does_not_query_per_conversation(self):
+        self.create_conversation(self.alice, self.charlie)
+
+        # Token auth + conversations + memberships + all membership users.
+        with self.assertNumQueries(4):
+            response = self.client.get('/api/conversations/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
