@@ -5,8 +5,42 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.utils import timezone
 
 from conversations.models import Conversation, ConversationMember
+from conversations.unread import unread_counts_for_members
 
 from .serializers import CreateMessageSerializer, MessageSerializer
+
+
+class NotificationConsumer(AsyncJsonWebsocketConsumer):
+    async def connect(self):
+        self.group_name = None
+        user = self.scope.get('user')
+
+        if not user or not user.is_authenticated:
+            await self.close(code=4401)
+            return
+
+        self.group_name = f'user_{user.pk}'
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        if self.group_name:
+            await self.channel_layer.group_discard(
+                self.group_name,
+                self.channel_name,
+            )
+
+    async def receive_json(self, content, **kwargs):
+        # This socket is server-to-client only for now.
+        return
+
+    async def notification_message(self, event):
+        await self.send_json({
+            'type': 'notification.message',
+            'conversation': event['conversation'],
+            'message': event['message'],
+            'unread_count': event['unread_count'],
+        })
 
 
 class ChatConsumer(AsyncJsonWebsocketConsumer):
@@ -76,7 +110,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.send_error('invalid_payload', 'Message content must be a string.')
             return
 
-        message_data, errors = await self.create_message(
+        message_data, notifications, errors = await self.create_message(
             self.scope['user'],
             content['content'],
         )
@@ -92,6 +126,16 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 'message': message_data,
             },
         )
+        for notification in notifications:
+            await self.channel_layer.group_send(
+                f"user_{notification['user_id']}",
+                {
+                    'type': 'notification.message',
+                    'conversation': self.conversation_id,
+                    'message': message_data,
+                    'unread_count': notification['unread_count'],
+                },
+            )
 
     async def chat_message(self, event):
         await self.send_json({
@@ -121,7 +165,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     def create_message(self, user, content):
         serializer = CreateMessageSerializer(data={'content': content})
         if not serializer.is_valid():
-            return None, serializer.errors
+            return None, None, serializer.errors
 
         message = serializer.save(
             conversation_id=self.conversation_id,
@@ -131,7 +175,23 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             'author',
             'conversation',
         ).get(pk=message.pk)
-        return MessageSerializer(message).data, None
+        recipient_ids = list(
+            ConversationMember.objects.filter(
+                conversation_id=self.conversation_id,
+            ).exclude(user=user).values_list('user_id', flat=True)
+        )
+        unread_counts = unread_counts_for_members(
+            self.conversation_id,
+            recipient_ids,
+        )
+        notifications = [
+            {
+                'user_id': user_id,
+                'unread_count': unread_counts[user_id],
+            }
+            for user_id in recipient_ids
+        ]
+        return MessageSerializer(message).data, notifications, None
 
     @database_sync_to_async
     def mark_conversation_read(self, user):

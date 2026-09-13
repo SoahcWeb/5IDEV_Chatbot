@@ -17,9 +17,9 @@ class ChatConsumerTests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
-        self.alice = User.objects.create_user('alice', password='password')
-        self.bob = User.objects.create_user('bob', password='password')
-        self.charlie = User.objects.create_user('charlie', password='password')
+        self.alice = User.objects.create_user('alice')
+        self.bob = User.objects.create_user('bob')
+        self.charlie = User.objects.create_user('charlie')
         self.alice_token = Token.objects.create(user=self.alice)
         self.bob_token = Token.objects.create(user=self.bob)
         self.charlie_token = Token.objects.create(user=self.charlie)
@@ -45,6 +45,10 @@ class ChatConsumerTests(TransactionTestCase):
         )
         connected, close_code = await communicator.connect()
         return communicator, connected, close_code
+
+    def notification_path(self, token=None):
+        path = '/ws/notifications/'
+        return f'{path}?token={token.key}' if token else path
 
     def test_member_with_valid_token_can_connect(self):
         async def scenario():
@@ -245,5 +249,186 @@ class ChatConsumerTests(TransactionTestCase):
             await alice_socket.disconnect()
             await bob_socket.disconnect()
             await other_socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_authenticated_user_can_connect_to_notifications(self):
+        async def scenario():
+            socket, connected, _ = await self.connect(
+                self.notification_path(self.alice_token)
+            )
+            self.assertTrue(connected)
+            await socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_notification_connection_requires_valid_token(self):
+        async def scenario():
+            for path in (
+                self.notification_path(),
+                '/ws/notifications/?token=invalid',
+            ):
+                socket, connected, close_code = await self.connect(path)
+                self.assertFalse(connected)
+                self.assertEqual(close_code, 4401)
+                await socket.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_private_message_notifies_only_other_member(self):
+        async def scenario():
+            chat, chat_connected, _ = await self.connect(
+                self.socket_path(token=self.alice_token)
+            )
+            alice_notifications, alice_connected, _ = await self.connect(
+                self.notification_path(self.alice_token)
+            )
+            bob_notifications, bob_connected, _ = await self.connect(
+                self.notification_path(self.bob_token)
+            )
+            charlie_notifications, charlie_connected, _ = await self.connect(
+                self.notification_path(self.charlie_token)
+            )
+            self.assertTrue(all((
+                chat_connected,
+                alice_connected,
+                bob_connected,
+                charlie_connected,
+            )))
+
+            await chat.send_json_to({
+                'type': 'message.send',
+                'content': 'Private notification',
+            })
+            created = await chat.receive_json_from()
+            notification = await bob_notifications.receive_json_from()
+
+            self.assertEqual(created['type'], 'message.created')
+            self.assertEqual(notification['type'], 'notification.message')
+            self.assertEqual(notification['conversation'], self.conversation.pk)
+            self.assertEqual(notification['message']['id'], created['message']['id'])
+            self.assertEqual(notification['message']['author'], self.alice.pk)
+            self.assertEqual(notification['message']['username'], 'alice')
+            self.assertEqual(notification['unread_count'], 1)
+            self.assertTrue(await alice_notifications.receive_nothing(timeout=0.1))
+            self.assertTrue(await charlie_notifications.receive_nothing(timeout=0.1))
+
+            await chat.disconnect()
+            await alice_notifications.disconnect()
+            await bob_notifications.disconnect()
+            await charlie_notifications.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_group_message_notifies_all_other_members_with_correct_counts(self):
+        group = Conversation.objects.create(
+            type=Conversation.Type.GROUP,
+            name='Team',
+            created_by=self.alice,
+        )
+        ConversationMember.objects.bulk_create([
+            ConversationMember(conversation=group, user=self.alice),
+            ConversationMember(conversation=group, user=self.bob),
+            ConversationMember(conversation=group, user=self.charlie),
+        ])
+        Message.objects.create(
+            conversation=group,
+            author=self.alice,
+            content='Earlier unread message',
+        )
+
+        async def scenario():
+            chat, chat_connected, _ = await self.connect(
+                self.socket_path(conversation=group, token=self.alice_token)
+            )
+            alice_notifications, alice_connected, _ = await self.connect(
+                self.notification_path(self.alice_token)
+            )
+            bob_notifications, bob_connected, _ = await self.connect(
+                self.notification_path(self.bob_token)
+            )
+            charlie_notifications, charlie_connected, _ = await self.connect(
+                self.notification_path(self.charlie_token)
+            )
+            self.assertTrue(all((
+                chat_connected,
+                alice_connected,
+                bob_connected,
+                charlie_connected,
+            )))
+
+            await chat.send_json_to({
+                'type': 'message.send',
+                'content': 'Group notification',
+            })
+            created = await chat.receive_json_from()
+            bob_event = await bob_notifications.receive_json_from()
+            charlie_event = await charlie_notifications.receive_json_from()
+
+            self.assertEqual(bob_event, charlie_event)
+            self.assertEqual(bob_event['conversation'], group.pk)
+            self.assertEqual(bob_event['message']['id'], created['message']['id'])
+            self.assertEqual(bob_event['unread_count'], 2)
+            self.assertTrue(await alice_notifications.receive_nothing(timeout=0.1))
+
+            await chat.disconnect()
+            await alice_notifications.disconnect()
+            await bob_notifications.disconnect()
+            await charlie_notifications.disconnect()
+
+        async_to_sync(scenario)()
+
+    def test_notifications_from_multiple_conversations_remain_isolated(self):
+        other = Conversation.objects.create(
+            type=Conversation.Type.PRIVATE,
+            created_by=self.alice,
+        )
+        ConversationMember.objects.bulk_create([
+            ConversationMember(conversation=other, user=self.alice),
+            ConversationMember(conversation=other, user=self.charlie),
+        ])
+
+        async def scenario():
+            first_chat, first_connected, _ = await self.connect(
+                self.socket_path(token=self.alice_token)
+            )
+            second_chat, second_connected, _ = await self.connect(
+                self.socket_path(conversation=other, token=self.alice_token)
+            )
+            bob_notifications, bob_connected, _ = await self.connect(
+                self.notification_path(self.bob_token)
+            )
+            charlie_notifications, charlie_connected, _ = await self.connect(
+                self.notification_path(self.charlie_token)
+            )
+            self.assertTrue(all((
+                first_connected,
+                second_connected,
+                bob_connected,
+                charlie_connected,
+            )))
+
+            await first_chat.send_json_to({
+                'type': 'message.send',
+                'content': 'For Bob',
+            })
+            await first_chat.receive_json_from()
+            bob_event = await bob_notifications.receive_json_from()
+            self.assertEqual(bob_event['conversation'], self.conversation.pk)
+            self.assertTrue(await charlie_notifications.receive_nothing(timeout=0.1))
+
+            await second_chat.send_json_to({
+                'type': 'message.send',
+                'content': 'For Charlie',
+            })
+            await second_chat.receive_json_from()
+            charlie_event = await charlie_notifications.receive_json_from()
+            self.assertEqual(charlie_event['conversation'], other.pk)
+            self.assertTrue(await bob_notifications.receive_nothing(timeout=0.1))
+
+            await first_chat.disconnect()
+            await second_chat.disconnect()
+            await bob_notifications.disconnect()
+            await charlie_notifications.disconnect()
 
         async_to_sync(scenario)()
