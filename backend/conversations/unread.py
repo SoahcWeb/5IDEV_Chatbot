@@ -1,5 +1,7 @@
 from django.db.models import Count, F, Q
 
+from .models import ConversationMember
+
 
 def with_unread_count(queryset, user):
     """Annotate conversations with unread messages for the given member."""
@@ -24,3 +26,25 @@ def unread_count_for(conversation, user):
         ),
         user,
     ).values_list('unread_count', flat=True).get()
+
+
+def unread_counts_for_members(conversation_id, user_ids):
+    """Return per-member unread counts for one conversation in one query."""
+    unread_filter = ~Q(conversation__messages__author_id=F('user_id')) & (
+        Q(last_read_at__isnull=True)
+        | Q(conversation__messages__created_at__gt=F('last_read_at'))
+    )
+    memberships = ConversationMember.objects.filter(
+        conversation_id=conversation_id,
+        user_id__in=user_ids,
+    ).annotate(
+        unread_count=Count(
+            'conversation__messages',
+            filter=unread_filter,
+            distinct=True,
+        )
+    )
+    return {
+        membership.user_id: membership.unread_count
+        for membership in memberships
+    }
