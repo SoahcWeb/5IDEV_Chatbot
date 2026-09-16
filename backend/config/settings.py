@@ -31,6 +31,9 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
 
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+
 DJANGO_ALLOWED_HOSTS = os.environ.get(
     'DJANGO_ALLOWED_HOSTS',
     'localhost,127.0.0.1',
