@@ -64,6 +64,15 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
+WEBSOCKET_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'WEBSOCKET_ALLOWED_ORIGINS',
+        'http://localhost:5173',
+    ).split(',')
+    if origin.strip()
+]
+
 
 # Application definition
 
