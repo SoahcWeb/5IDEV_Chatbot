@@ -15,6 +15,12 @@
       "./vitest.setup.js"
     ]
   },
+  "vitest": {
+    "environment": "jsdom",
+    "setupFiles": [
+      "./vitest.setup.js"
+    ]
+  },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
