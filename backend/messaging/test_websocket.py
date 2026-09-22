@@ -41,7 +41,7 @@ class ChatConsumerTests(TransactionTestCase):
         communicator = WebsocketCommunicator(
             application,
             path,
-            headers=[(b'origin', b'http://testserver')],
+            headers=[(b'origin', b'http://localhost:5173')],
         )
         connected, close_code = await communicator.connect()
         return communicator, connected, close_code
