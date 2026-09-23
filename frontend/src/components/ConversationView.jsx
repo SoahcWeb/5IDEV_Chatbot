@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { api } from '../api/client.js'
-import { useConversationSocket } from '../hooks/useConversationSocket.js'
+import { api, getToken } from '../api/client.js'
+import { useConversationSocket } from '../useConversationSocket.js'
 import MessageList from './MessageList.jsx'
 import MessageInput from './MessageInput.jsx'
 
@@ -26,26 +26,54 @@ export default function ConversationView({ conversation, onBack }) {
     reload()
   }, [reload])
 
-  // ⚠️ Le hook est un stub : le 3ᵉ membre le remplira avec les WebSockets.
-  // En attendant, on envoie en REST.
-  const { sendMessage } = useConversationSocket(conversation.id, {
-    onMessage: (msg) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === msg.id)) return prev
-        return [...prev, msg]
-      })
-    },
+  const {
+    status: socketStatus,
+    messages: socketMessages,
+    error: socketError,
+    sendMessage,
+    markConversationRead,
+  } = useConversationSocket({
+    conversationId: conversation.id,
+    token: getToken(),
+    baseUrl: import.meta.env.VITE_WS_URL,
   })
 
+  useEffect(() => {
+    if (socketMessages.length === 0) return
+
+    setMessages((current) => {
+      const incomingById = new Map(
+        socketMessages.map((message) => [message.id, message])
+      )
+      const merged = current.map((message) =>
+        incomingById.has(message.id)
+          ? { ...message, ...incomingById.get(message.id) }
+          : message
+      )
+      const currentIds = new Set(current.map((message) => message.id))
+      const newMessages = socketMessages.filter(
+        (message) => !currentIds.has(message.id)
+      )
+
+      return newMessages.length > 0
+        ? [...merged, ...newMessages]
+        : merged
+    })
+  }, [socketMessages])
+
+  useEffect(() => {
+    if (socketStatus === 'open') markConversationRead()
+  }, [markConversationRead, socketStatus])
+
+  useEffect(() => {
+    if (socketError) setError(socketError.detail || 'Erreur WebSocket')
+  }, [socketError])
+
   const handleSend = async (content) => {
-    const sent = sendMessage?.(content)
-    if (!sent) {
-      try {
-        const msg = await api.sendMessage(conversation.id, content)
-        setMessages((prev) => [...prev, msg])
-      } catch (e) {
-        setError(e.message)
-      }
+    try {
+      sendMessage(content)
+    } catch (e) {
+      setError(e.message)
     }
   }
 
