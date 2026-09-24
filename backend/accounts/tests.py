@@ -12,6 +12,7 @@ class AuthenticationAPITests(APITestCase):
     login_url = '/api/auth/login/'
     logout_url = '/api/auth/logout/'
     me_url = '/api/auth/me/'
+    users_url = '/api/auth/users/'
 
     def registration_data(self, **overrides):
         data = {
@@ -125,3 +126,28 @@ class AuthenticationAPITests(APITestCase):
         response = self.client.get(self.me_url)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_user_list_without_token_is_rejected(self):
+        response = self.client.get(self.users_url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_user_list_excludes_current_user_and_is_sorted_by_username(self):
+        current_user = self.create_user()
+        token = Token.objects.create(user=current_user)
+        zoe = User.objects.create_user(username='zoe', password='password')
+        alice = User.objects.create_user(username='alice', password='password')
+        self.authenticate_with(token)
+
+        response = self.client.get(self.users_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data,
+            [
+                {'id': alice.id, 'username': alice.username},
+                {'id': zoe.id, 'username': zoe.username},
+            ],
+        )
+        self.assertNotIn(current_user.id, [user['id'] for user in response.data])
+        self.assertEqual(set(response.data[0]), {'id', 'username'})
