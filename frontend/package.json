@@ -6,14 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "vitest run",
     "preview": "vite preview",
     "lint": "oxlint src"
-  },
-  "vitest": {
-    "environment": "jsdom",
-    "setupFiles": [
-      "./vitest.setup.js"
-    ]
   },
   "vitest": {
     "environment": "jsdom",

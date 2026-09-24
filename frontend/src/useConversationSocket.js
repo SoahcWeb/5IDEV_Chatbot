@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { connectConversation } from "./websocket";
 
@@ -92,7 +92,7 @@ export function useConversationSocket({
     };
   }, [baseUrl, conversationId, enabled, token]);
 
-  const sendMessage = (content) => {
+  const sendMessage = useCallback((content) => {
     const connection = socketRef.current;
 
     if (!connection) {
@@ -100,9 +100,9 @@ export function useConversationSocket({
     }
 
     connection.sendMessage(content);
-  };
+  }, []);
 
-  const markConversationRead = () => {
+  const markConversationRead = useCallback(() => {
     const connection = socketRef.current;
 
     if (!connection) {
@@ -110,7 +110,7 @@ export function useConversationSocket({
     }
 
     connection.markConversationRead();
-  };
+  }, []);
 
   return {
     status,
