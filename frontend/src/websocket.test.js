@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { connectConversation } from "./websocket";
+import { connectConversation, connectNotifications } from "./websocket";
 
 const originalWebSocket = globalThis.WebSocket;
 
@@ -136,5 +136,45 @@ describe("connectConversation", () => {
     }
 
     expect(events).toContainEqual(conversationRead);
+  });
+});
+
+describe("connectNotifications", () => {
+  beforeEach(() => {
+    globalThis.WebSocket = FakeWebSocket;
+    FakeWebSocket.instances = [];
+  });
+
+  afterEach(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  it("opens the global notification socket and receives notification.message", () => {
+    const events = [];
+    const connection = connectNotifications({
+      token: "abc 123",
+      baseUrl: "ws://localhost:8000/",
+      onEvent: (event) => events.push(event),
+    });
+
+    const fakeSocket = FakeWebSocket.instances[0];
+    expect(fakeSocket.url).toBe(
+      "ws://localhost:8000/ws/notifications/?token=abc%20123",
+    );
+
+    fakeSocket.readyState = 1;
+    fakeSocket.onopen();
+    expect(connection.status).toBe("open");
+
+    const notification = {
+      type: "notification.message",
+      conversation: 42,
+      message: { id: 7, content: "Bonjour" },
+      unread_count: 1,
+    };
+    fakeSocket.onmessage({ data: JSON.stringify(notification) });
+
+    expect(events).toContainEqual(notification);
+    connection.close();
   });
 });

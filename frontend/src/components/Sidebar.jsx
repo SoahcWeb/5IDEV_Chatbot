@@ -6,6 +6,8 @@ export default function Sidebar({
   activeId,
   onSelect,
   onNewConversation,
+  notificationPermission,
+  onEnableNotifications,
 }) {
   const { user, logout } = useAuth()
   return (
@@ -24,6 +26,15 @@ export default function Sidebar({
           </button>
         </div>
       </div>
+      {notificationPermission !== 'granted' && (
+        <button
+          className="notification-opt-in"
+          onClick={onEnableNotifications}
+          type="button"
+        >
+          Activer les notifications
+        </button>
+      )}
       <ConversationList
         conversations={conversations}
         activeId={activeId}

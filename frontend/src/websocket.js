@@ -9,6 +9,16 @@ export function buildConversationSocketUrl({
   return `${normalizedBase}/ws/conversations/${conversationId}/?token=${encodedToken}`;
 }
 
+export function buildNotificationSocketUrl({
+  token,
+  baseUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000",
+}) {
+  const normalizedBase = baseUrl.replace(/\/$/, "");
+  const encodedToken = encodeURIComponent(token);
+
+  return `${normalizedBase}/ws/notifications/?token=${encodedToken}`;
+}
+
 export function connectConversation({
   conversationId,
   token,
@@ -48,6 +58,62 @@ export function connectConversation({
 
       socket.send(JSON.stringify({ type: "conversation.read" }));
     },
+    close() {
+      if (isClosed()) {
+        connection.status = "closed";
+        return;
+      }
+
+      socket.close();
+      connection.status = "closed";
+    },
+  };
+
+  socket.onopen = () => {
+    connection.status = "open";
+  };
+
+  socket.onclose = () => {
+    connection.status = "closed";
+  };
+
+  socket.onerror = () => {
+    connection.status = "error";
+  };
+
+  socket.onmessage = (event) => {
+    try {
+      const payload =
+        typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      onEvent(payload);
+    } catch (error) {
+      onEvent({
+        type: "error",
+        code: "invalid_payload",
+        detail: String(error),
+      });
+    }
+  };
+
+  return connection;
+}
+
+export function connectNotifications({
+  token,
+  baseUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000",
+  onEvent = () => {},
+} = {}) {
+  if (!token) {
+    throw new Error("token is required");
+  }
+
+  const socket = new WebSocket(buildNotificationSocketUrl({ token, baseUrl }));
+  const isClosed = () =>
+    socket.readyState === 3 || socket.readyState === WebSocket.CLOSED;
+
+  const connection = {
+    status: "connecting",
+    socket,
     close() {
       if (isClosed()) {
         connection.status = "closed";
