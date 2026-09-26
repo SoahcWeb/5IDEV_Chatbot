@@ -1,11 +1,14 @@
-from django.contrib.auth import authenticate
-from rest_framework import status
+from django.contrib.auth import authenticate, get_user_model
+from rest_framework import generics, status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import RegisterSerializer, UserSerializer
+from .serializers import RegisterSerializer, UserListSerializer, UserSerializer
+
+
+User = get_user_model()
 
 
 class RegisterView(APIView):
@@ -48,6 +51,13 @@ class LoginView(APIView):
 class CurrentUserView(APIView):
     def get(self, request):
         return Response(UserSerializer(request.user).data)
+
+
+class UserListView(generics.ListAPIView):
+    serializer_class = UserListSerializer
+
+    def get_queryset(self):
+        return User.objects.exclude(pk=self.request.user.pk).order_by('username')
 
 
 class LogoutView(APIView):
