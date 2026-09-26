@@ -1,5 +1,18 @@
 # React + Vite
 
+## Environment variables
+
+Create a `.env.local` file when the local API or WebSocket server is not using
+the default URLs:
+
+```env
+VITE_API_URL=http://localhost:8000/api
+VITE_WS_URL=ws://localhost:8000
+```
+
+For production, set `VITE_API_URL` to the HTTPS API URL and `VITE_WS_URL` to
+the matching `wss://` WebSocket URL before building the frontend.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:

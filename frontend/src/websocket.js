@@ -1,7 +1,7 @@
 export function buildConversationSocketUrl({
   conversationId,
   token,
-  baseUrl = "ws://localhost:8000",
+  baseUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000",
 }) {
   const normalizedBase = baseUrl.replace(/\/$/, "");
   const encodedToken = encodeURIComponent(token);
@@ -12,7 +12,7 @@ export function buildConversationSocketUrl({
 export function connectConversation({
   conversationId,
   token,
-  baseUrl = "ws://localhost:8000",
+  baseUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000",
   onEvent = () => {},
 } = {}) {
   if (!conversationId) {
