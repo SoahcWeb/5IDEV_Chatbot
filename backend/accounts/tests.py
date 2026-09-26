@@ -1,4 +1,6 @@
 from django.contrib.auth import get_user_model
+from django.core.management import call_command, CommandError
+from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -151,3 +153,21 @@ class AuthenticationAPITests(APITestCase):
         )
         self.assertNotIn(current_user.id, [user['id'] for user in response.data])
         self.assertEqual(set(response.data[0]), {'id', 'username'})
+
+
+class SeedDemoUsersCommandTests(TestCase):
+    @override_settings(DEBUG=True)
+    def test_command_creates_two_users_and_is_idempotent(self):
+        call_command('seed_demo_users', password='Realtime-Test-2026!')
+        call_command('seed_demo_users', password='Realtime-Test-2026!')
+
+        self.assertEqual(User.objects.filter(username__in=('alice_rt', 'bob_rt')).count(), 2)
+        for username in ('alice_rt', 'bob_rt'):
+            user = User.objects.get(username=username)
+            self.assertTrue(user.check_password('Realtime-Test-2026!'))
+            self.assertTrue(user.is_active)
+
+    @override_settings(DEBUG=False)
+    def test_command_refuses_to_run_when_debug_is_disabled(self):
+        with self.assertRaises(CommandError):
+            call_command('seed_demo_users', password='Realtime-Test-2026!')

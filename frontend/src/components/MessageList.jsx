@@ -21,7 +21,9 @@ export default function MessageList({ messages, onEdit, onDelete, loading }) {
           <div key={m.id} className={`msg ${mine ? 'mine' : ''}`}>
             {!mine && (
               <div className="meta">
-                <strong>{m.author?.username ?? m.author_name ?? 'User'}</strong>
+                <strong>
+                  {m.username ?? m.author?.username ?? m.author_name ?? 'User'}
+                </strong>
               </div>
             )}
             <div>
