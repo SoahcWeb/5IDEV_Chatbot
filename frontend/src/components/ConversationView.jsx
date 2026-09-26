@@ -4,7 +4,7 @@ import { useConversationSocket } from '../useConversationSocket.js'
 import MessageList from './MessageList.jsx'
 import MessageInput from './MessageInput.jsx'
 
-export default function ConversationView({ conversation, onBack }) {
+export default function ConversationView({ conversation, onBack, onRead }) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -36,6 +36,7 @@ export default function ConversationView({ conversation, onBack }) {
     conversationId: conversation.id,
     token: getToken(),
     baseUrl: import.meta.env.VITE_WS_URL,
+    onRead,
   })
 
   useEffect(() => {

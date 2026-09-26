@@ -7,6 +7,7 @@ export function useConversationSocket({
   token,
   baseUrl = "ws://localhost:8000",
   enabled = true,
+  onRead,
 }) {
   const [status, setStatus] = useState(
     enabled && conversationId && token ? "connecting" : "idle",
@@ -54,6 +55,7 @@ export function useConversationSocket({
               read: true,
             })),
           );
+          onRead?.(event);
         }
 
         if (event.type === "error") {
@@ -90,7 +92,7 @@ export function useConversationSocket({
       connection.close();
       socketRef.current = null;
     };
-  }, [baseUrl, conversationId, enabled, token]);
+  }, [baseUrl, conversationId, enabled, onRead, token]);
 
   const sendMessage = useCallback((content) => {
     const connection = socketRef.current;
