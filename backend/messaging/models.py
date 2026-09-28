@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from conversations.models import Conversation
 
@@ -21,3 +22,11 @@ class Message(models.Model):
 
     class Meta:
         ordering = ('created_at', 'id')
+
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        if is_new:
+            Conversation.objects.filter(pk=self.conversation_id).update(
+                updated_at=timezone.now(),
+            )

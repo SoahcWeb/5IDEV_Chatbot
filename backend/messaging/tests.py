@@ -56,6 +56,19 @@ class MessageAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['content'], 'Hello')
 
+    def test_rest_message_creation_updates_conversation_activity(self):
+        old_timestamp = timezone.now() - timedelta(days=1)
+        Conversation.objects.filter(pk=self.conversation.pk).update(
+            updated_at=old_timestamp,
+        )
+        self.authenticate(self.alice)
+
+        response = self.client.post(self.list_url(), {'content': 'Hello'})
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.conversation.refresh_from_db()
+        self.assertGreater(self.conversation.updated_at, old_timestamp)
+
     def test_non_member_cannot_send_message(self):
         self.authenticate(self.charlie)
         response = self.client.post(self.list_url(), {'content': 'Hello'})

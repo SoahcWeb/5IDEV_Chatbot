@@ -1,7 +1,10 @@
+from datetime import timedelta
+
 from asgiref.sync import async_to_sync
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 
 from config.asgi import application
@@ -148,6 +151,28 @@ class ChatConsumerTests(TransactionTestCase):
         message = Message.objects.get(pk=data['id'])
         self.assertEqual(message.author, self.alice)
         self.assertEqual(message.conversation, self.conversation)
+
+    def test_websocket_message_creation_updates_conversation_activity(self):
+        old_timestamp = timezone.now() - timedelta(days=1)
+        Conversation.objects.filter(pk=self.conversation.pk).update(
+            updated_at=old_timestamp,
+        )
+
+        async def scenario():
+            socket, connected, _ = await self.connect(
+                self.socket_path(token=self.alice_token)
+            )
+            self.assertTrue(connected)
+            await socket.send_json_to({
+                'type': 'message.send',
+                'content': 'New activity',
+            })
+            await socket.receive_json_from()
+            await socket.disconnect()
+
+        async_to_sync(scenario)()
+        self.conversation.refresh_from_db()
+        self.assertGreater(self.conversation.updated_at, old_timestamp)
 
     def test_client_cannot_spoof_author_or_conversation(self):
         other = Conversation.objects.create(
