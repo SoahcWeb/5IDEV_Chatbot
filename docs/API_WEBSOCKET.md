@@ -84,9 +84,9 @@ Réponse `201 Created` :
 
 Codes observables :
 
-| Code | Signification |
-| --- | --- |
-| `201` | Utilisateur créé et token renvoyé. |
+| Code  | Signification                                                                                                                         |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `201` | Utilisateur créé et token renvoyé.                                                                                                    |
 | `400` | Données invalides : champs manquants, email déjà utilisé, mots de passe différents ou mot de passe refusé par les validateurs Django. |
 
 ### Connexion
@@ -104,11 +104,11 @@ Corps :
 
 Réponse `200 OK` : même structure `{ "token": ..., "user": ... }` que l'inscription. Le token existant de l'utilisateur est réutilisé s'il existe déjà.
 
-| Code | Signification |
-| --- | --- |
-| `200` | Identifiants valides. |
+| Code  | Signification                                                                                             |
+| ----- | --------------------------------------------------------------------------------------------------------- |
+| `200` | Identifiants valides.                                                                                     |
 | `400` | `username` ou `password` absent ; la réponse contient `{"detail":"Username and password are required."}`. |
-| `401` | Identifiants invalides ; la réponse contient `{"detail":"Invalid username or password."}`. |
+| `401` | Identifiants invalides ; la réponse contient `{"detail":"Invalid username or password."}`.                |
 
 ### Utilisateur courant
 
@@ -116,10 +116,10 @@ Réponse `200 OK` : même structure `{ "token": ..., "user": ... }` que l'inscri
 
 Le corps de la requête est vide. La réponse `200 OK` contient directement l'objet utilisateur décrit plus haut.
 
-| Code | Signification |
-| --- | --- |
+| Code  | Signification                    |
+| ----- | -------------------------------- |
 | `200` | Utilisateur authentifié renvoyé. |
-| `401` | Token absent ou invalide. |
+| `401` | Token absent ou invalide.        |
 
 ### Déconnexion
 
@@ -127,9 +127,9 @@ Le corps de la requête est vide. La réponse `200 OK` contient directement l'ob
 
 Le corps est vide. La réponse `204 No Content` n'a pas de corps et le token utilisé est supprimé.
 
-| Code | Signification |
-| --- | --- |
-| `204` | Déconnexion effectuée. |
+| Code  | Signification             |
+| ----- | ------------------------- |
+| `204` | Déconnexion effectuée.    |
 | `401` | Token absent ou invalide. |
 
 ## 4. Conversations
@@ -199,10 +199,10 @@ Codes : `200` si la liste est accessible, `401` sans token valide.
 
 Corps vide. Réponse `200 OK` : une conversation au format ci-dessus.
 
-| Code | Signification |
-| --- | --- |
-| `200` | Conversation renvoyée. |
-| `401` | Token absent ou invalide. |
+| Code  | Signification                                       |
+| ----- | --------------------------------------------------- |
+| `200` | Conversation renvoyée.                              |
+| `401` | Token absent ou invalide.                           |
 | `404` | Conversation inexistante ou utilisateur non membre. |
 
 ### Création ou récupération d'une conversation privée
@@ -217,12 +217,12 @@ Corps vide. Réponse `200 OK` : une conversation au format ci-dessus.
 
 La réponse contient une conversation complète. Si aucune conversation privée n'existe déjà entre les deux utilisateurs, elle est créée et le code est `201 Created`. Si la paire existe déjà, elle est réutilisée et le code est `200 OK`.
 
-| Code | Signification |
-| --- | --- |
-| `200` | Conversation privée existante renvoyée. |
-| `201` | Conversation privée créée. |
+| Code  | Signification                                                                   |
+| ----- | ------------------------------------------------------------------------------- |
+| `200` | Conversation privée existante renvoyée.                                         |
+| `201` | Conversation privée créée.                                                      |
 | `400` | Utilisateur inconnu, champ invalide ou tentative de conversation avec soi-même. |
-| `401` | Token absent ou invalide. |
+| `401` | Token absent ou invalide.                                                       |
 
 ### Création d'un groupe
 
@@ -237,11 +237,11 @@ La réponse contient une conversation complète. Si aucune conversation privée 
 
 `member_ids` est facultatif. Le créateur est ajouté automatiquement, même s'il apparaît dans la liste. Les doublons dans `member_ids` sont refusés. La réponse `201 Created` est la conversation complète.
 
-| Code | Signification |
-| --- | --- |
-| `201` | Groupe créé. |
+| Code  | Signification                                                               |
+| ----- | --------------------------------------------------------------------------- |
+| `201` | Groupe créé.                                                                |
 | `400` | Nom vide, utilisateur inconnu, identifiants dupliqués ou données invalides. |
-| `401` | Token absent ou invalide. |
+| `401` | Token absent ou invalide.                                                   |
 
 ### Ajouter un membre
 
@@ -257,13 +257,13 @@ Réservé à un membre ayant le rôle `admin` dans un groupe.
 
 La réponse `201 Created` contient la conversation complète mise à jour.
 
-| Code | Signification |
-| --- | --- |
-| `201` | Membre ajouté. |
+| Code  | Signification                                                                           |
+| ----- | --------------------------------------------------------------------------------------- |
+| `201` | Membre ajouté.                                                                          |
 | `400` | Conversation privée, utilisateur déjà membre, utilisateur inconnu ou données invalides. |
-| `401` | Token absent ou invalide. |
-| `403` | Utilisateur membre mais non administrateur. |
-| `404` | Conversation inexistante ou utilisateur non membre. |
+| `401` | Token absent ou invalide.                                                               |
+| `403` | Utilisateur membre mais non administrateur.                                             |
+| `404` | Conversation inexistante ou utilisateur non membre.                                     |
 
 ### Retirer un membre
 
@@ -271,13 +271,13 @@ La réponse `201 Created` contient la conversation complète mise à jour.
 
 Réservé à un administrateur d'un groupe. La réponse `204 No Content` n'a pas de corps. Le dernier administrateur d'un groupe ne peut pas être retiré.
 
-| Code | Signification |
-| --- | --- |
-| `204` | Membre retiré. |
+| Code  | Signification                                                          |
+| ----- | ---------------------------------------------------------------------- |
+| `204` | Membre retiré.                                                         |
 | `400` | Conversation privée ou tentative de retirer le dernier administrateur. |
-| `401` | Token absent ou invalide. |
-| `403` | Utilisateur membre mais non administrateur. |
-| `404` | Conversation, appartenance de l'appelant ou membre ciblé introuvable. |
+| `401` | Token absent ou invalide.                                              |
+| `403` | Utilisateur membre mais non administrateur.                            |
+| `404` | Conversation, appartenance de l'appelant ou membre ciblé introuvable.  |
 
 Il n'existe actuellement aucun endpoint pour changer explicitement le rôle d'un membre.
 
@@ -324,9 +324,9 @@ L'auteur et la conversation sont déterminés par le serveur ; ils ne sont pas m
 
 Paramètres de requête :
 
-| Paramètre | Description |
-| --- | --- |
-| `page` | Numéro de page. |
+| Paramètre   | Description                                          |
+| ----------- | ---------------------------------------------------- |
+| `page`      | Numéro de page.                                      |
 | `page_size` | Taille de page, `20` par défaut et `100` au maximum. |
 
 Les messages sont classés du plus ancien au plus récent (`created_at`, puis `id`). Réponse `200 OK` paginée :
@@ -370,11 +370,11 @@ Codes : `201`, `400` si le contenu est absent/vide/invalide, `401` sans token va
 
 ### Consulter, modifier ou supprimer un message
 
-| Méthode et URL | Permission | Succès |
-| --- | --- | --- |
-| `GET /api/messages/<message_id>/` | Tout membre de la conversation | `200`, message complet |
-| `PATCH /api/messages/<message_id>/` | Auteur uniquement | `200`, message mis à jour |
-| `DELETE /api/messages/<message_id>/` | Auteur uniquement | `204`, corps vide |
+| Méthode et URL                       | Permission                     | Succès                    |
+| ------------------------------------ | ------------------------------ | ------------------------- |
+| `GET /api/messages/<message_id>/`    | Tout membre de la conversation | `200`, message complet    |
+| `PATCH /api/messages/<message_id>/`  | Auteur uniquement              | `200`, message mis à jour |
+| `DELETE /api/messages/<message_id>/` | Auteur uniquement              | `204`, corps vide         |
 
 Corps d'une modification :
 
@@ -398,11 +398,11 @@ ws://localhost:8000/ws/conversations/<conversation_id>/?token=abc123example
 
 Le token DRF est lu depuis le paramètre de requête `token`. La connexion est acceptée uniquement si le token est valide et si l'utilisateur appartient à la conversation.
 
-| Code de fermeture à la connexion | Cause |
-| --- | --- |
-| `4401` | Token absent ou invalide. |
-| `4403` | Utilisateur authentifié mais non membre. |
-| `4404` | Conversation inexistante. |
+| Code de fermeture à la connexion | Cause                                    |
+| -------------------------------- | ---------------------------------------- |
+| `4401`                           | Token absent ou invalide.                |
+| `4403`                           | Utilisateur authentifié mais non membre. |
+| `4404`                           | Conversation inexistante.                |
 
 ### Envoyer un message
 
@@ -466,12 +466,12 @@ Les erreurs après connexion conservent le socket ouvert et suivent ce format :
 }
 ```
 
-| `code` | Situation |
-| --- | --- |
-| `invalid_payload` | Trame non JSON, valeur JSON autre qu'un objet, ou `content` non textuel. |
-| `unsupported_event` | `type` différent de `message.send` et `conversation.read`. |
-| `invalid_message` | Contenu refusé par le serializer, notamment vide après suppression des espaces. |
-| `forbidden` | L'appartenance n'existe plus au moment de traiter `conversation.read`. |
+| `code`              | Situation                                                                       |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `invalid_payload`   | Trame non JSON, valeur JSON autre qu'un objet, ou `content` non textuel.        |
+| `unsupported_event` | `type` différent de `message.send` et `conversation.read`.                      |
+| `invalid_message`   | Contenu refusé par le serializer, notamment vide après suppression des espaces. |
+| `forbidden`         | L'appartenance n'existe plus au moment de traiter `conversation.read`.          |
 
 Aucun événement de présence, d'écriture en cours, de modification ou de suppression de message n'est implémenté.
 
@@ -505,6 +505,12 @@ Lorsqu'un message est créé par `message.send`, chaque autre membre de la conve
 ```
 
 `unread_count` est le compteur de la conversation indiquée pour le destinataire. L'expéditeur ne reçoit pas cette notification globale. Chaque destinataire reçoit son propre compteur, calculé selon son dernier marquage comme lu.
+
+### Reconnexion et rattrapage côté client
+
+Après une fermeture inattendue, le frontend réessaie les WebSockets avec un délai exponentiel avec jitter, plafonné à 30 secondes. Il ne réessaie pas les fermetures `4401` (token invalide), `4403` (accès refusé à la conversation) ou `4404` (conversation inexistante) ; un nouveau token ou contexte est nécessaire pour relancer la connexion. Les envois ne sont pas mis en file d'attente pendant une coupure.
+
+Après la réouverture d'un WebSocket de conversation, le frontend recharge l'historique via l'API REST afin de récupérer les messages créés pendant la coupure. Après la réouverture du WebSocket global, il recharge la liste des conversations pour actualiser les derniers messages et les compteurs de non-lus. La première ouverture ne déclenche pas ces chargements de rattrapage, car les chargements initiaux sont déjà effectués par la page. Le serveur ne rejoue pas les événements WebSocket manqués.
 
 ## 8. Exemple de scénario complet
 

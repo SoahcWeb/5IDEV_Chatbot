@@ -37,6 +37,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     token: getToken(),
     baseUrl: import.meta.env.VITE_WS_URL,
     onRead,
+    onReconnect: reload,
   })
 
   useEffect(() => {

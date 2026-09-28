@@ -18,14 +18,6 @@ export default function ChatPage() {
   )
   const notificationPermissionRef = useRef(notificationPermission)
 
-  const { events: notificationEvents } = useNotificationSocket({
-    token: getToken(),
-    baseUrl: import.meta.env.VITE_WS_URL,
-  })
-
-  conversationsRef.current = conversations
-  notificationPermissionRef.current = notificationPermission
-
   const loadConversations = useCallback(async () => {
     try {
       const data = await api.listConversations()
@@ -35,6 +27,15 @@ export default function ChatPage() {
       /* ignore */
     }
   }, [])
+
+  const { events: notificationEvents } = useNotificationSocket({
+    token: getToken(),
+    baseUrl: import.meta.env.VITE_WS_URL,
+    onReconnect: loadConversations,
+  })
+
+  conversationsRef.current = conversations
+  notificationPermissionRef.current = notificationPermission
 
   useEffect(() => {
     loadConversations()

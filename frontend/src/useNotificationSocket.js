@@ -6,6 +6,7 @@ export function useNotificationSocket({
   token,
   baseUrl = "ws://localhost:8000",
   enabled = true,
+  onReconnect,
 }) {
   const [status, setStatus] = useState(
     enabled && token ? "connecting" : "idle",
@@ -20,58 +21,102 @@ export function useNotificationSocket({
       return undefined;
     }
 
-    const connection = connectNotifications({
-      token,
-      baseUrl,
-      onEvent: (event) => {
-        if (!event || typeof event !== "object") {
-          const invalidEvent = {
-            type: "error",
-            code: "invalid_payload",
-            detail: "Invalid event payload",
-          };
-          setError(invalidEvent);
+    let active = true;
+    let currentConnection = null;
+    let retryTimer = null;
+    let retryAttempts = 0;
+    let hasOpened = false;
+
+    const connect = () => {
+      if (!active) return;
+
+      setStatus("connecting");
+      const connection = connectNotifications({
+        token,
+        baseUrl,
+        onEvent: (event) => {
+          if (!active || currentConnection !== connection) return;
+          if (!event || typeof event !== "object") {
+            const invalidEvent = {
+              type: "error",
+              code: "invalid_payload",
+              detail: "Invalid event payload",
+            };
+            setError(invalidEvent);
+            return;
+          }
+
+          if (event.type === "notification.message") {
+            setEvents((current) => [...current, event]);
+          }
+
+          if (event.type === "error") {
+            setError(event);
+          }
+        },
+      });
+
+      currentConnection = connection;
+      socketRef.current = connection;
+      const socket = connection.socket;
+
+      socket.onopen = () => {
+        if (!active || currentConnection !== connection) return;
+        connection.status = "open";
+        setStatus("open");
+        setError(null);
+        if (hasOpened) onReconnect?.();
+        hasOpened = true;
+        retryAttempts = 0;
+      };
+
+      socket.onclose = (event) => {
+        if (
+          !active ||
+          currentConnection !== connection ||
+          retryTimer !== null
+        ) {
           return;
         }
+        connection.status = "closed";
+        socketRef.current = null;
+        setStatus("closed");
+        if (event?.code === 4401) return;
 
-        if (event.type === "notification.message") {
-          setEvents((current) => [...current, event]);
-        }
+        const exponent = Math.min(retryAttempts, 5);
+        const baseDelay = Math.min(1000 * 2 ** exponent, 30000);
+        const delay = Math.min(
+          Math.round(baseDelay * (0.8 + Math.random() * 0.4)),
+          30000,
+        );
+        retryAttempts += 1;
+        retryTimer = window.setTimeout(() => {
+          retryTimer = null;
+          connect();
+        }, delay);
+      };
 
-        if (event.type === "error") {
-          setError(event);
-        }
-      },
-    });
-
-    socketRef.current = connection;
-    const socket = connection.socket;
-
-    socket.onopen = () => {
-      connection.status = "open";
-      setStatus("open");
+      socket.onerror = () => {
+        if (!active || currentConnection !== connection) return;
+        connection.status = "error";
+        setError({
+          type: "error",
+          code: "socket_error",
+          detail: "WebSocket error",
+        });
+        setStatus("error");
+      };
     };
 
-    socket.onclose = () => {
-      connection.status = "closed";
-      setStatus("closed");
-    };
-
-    socket.onerror = () => {
-      connection.status = "error";
-      setError({
-        type: "error",
-        code: "socket_error",
-        detail: "WebSocket error",
-      });
-      setStatus("error");
-    };
+    connect();
 
     return () => {
-      connection.close();
-      socketRef.current = null;
+      active = false;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      currentConnection?.close();
+      if (socketRef.current === currentConnection) socketRef.current = null;
     };
-  }, [baseUrl, enabled, token]);
+  }, [baseUrl, enabled, onReconnect, token]);
 
   return { status, events, error };
 }

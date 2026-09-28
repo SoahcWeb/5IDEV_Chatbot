@@ -13,7 +13,10 @@ export default function NewConversationModal({ onClose, onCreate }) {
   }, [])
 
   const toggle = (id) => {
-    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+    setSelected((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id)
+      return isGroup ? [...current, id] : [id]
+    })
   }
 
   const submit = async () => {
@@ -21,8 +24,8 @@ export default function NewConversationModal({ onClose, onCreate }) {
     if (!selected.length) return setError('Sélectionne au moins un utilisateur')
     try {
       const payload = isGroup
-        ? { name, is_group: true, members: selected }
-        : { is_group: false, members: selected }
+        ? { name, member_ids: selected }
+        : { user_id: selected[0] }
       const conv = await api.createConversation(payload)
       onCreate(conv)
     } catch (e) {
@@ -38,7 +41,12 @@ export default function NewConversationModal({ onClose, onCreate }) {
           <input
             type="checkbox"
             checked={isGroup}
-            onChange={(e) => setIsGroup(e.target.checked)}
+            onChange={(event) => {
+              setIsGroup(event.target.checked)
+              if (!event.target.checked) {
+                setSelected((current) => current.slice(0, 1))
+              }
+            }}
           />
           Groupe
         </label>

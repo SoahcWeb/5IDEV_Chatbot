@@ -44,7 +44,12 @@ export const api = {
   // Conversations
   listConversations: () => request("/conversations/"),
   createConversation: (payload) =>
-    request("/conversations/", { method: "POST", body: payload }),
+    request(
+      payload.member_ids === undefined
+        ? "/conversations/private/"
+        : "/conversations/group/",
+      { method: "POST", body: payload },
+    ),
   getConversation: (id) => request(`/conversations/${id}/`),
   addMember: (id, userId) =>
     request(`/conversations/${id}/members/`, {

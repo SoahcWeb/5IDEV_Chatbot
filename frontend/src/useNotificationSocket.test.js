@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useNotificationSocket } from "./useNotificationSocket";
 
@@ -35,6 +35,8 @@ describe("useNotificationSocket", () => {
 
   afterEach(() => {
     globalThis.WebSocket = originalWebSocket;
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("connects and exposes notification.message events", () => {
@@ -71,5 +73,69 @@ describe("useNotificationSocket", () => {
     );
 
     expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it("reconnects after a transient close and invokes onReconnect after reopening", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const onReconnect = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useNotificationSocket({
+        token: "abc123",
+        baseUrl: "ws://localhost:8000",
+        onReconnect,
+      }),
+    );
+
+    const firstSocket = FakeWebSocket.instances[0];
+    firstSocket.readyState = 1;
+    act(() => firstSocket.onopen());
+    expect(onReconnect).not.toHaveBeenCalled();
+
+    act(() => firstSocket.onclose({ code: 1006 }));
+    act(() => vi.advanceTimersByTime(999));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    act(() => vi.advanceTimersByTime(1));
+    expect(FakeWebSocket.instances).toHaveLength(2);
+
+    const secondSocket = FakeWebSocket.instances[1];
+    secondSocket.readyState = 1;
+    act(() => secondSocket.onopen());
+    expect(result.current.status).toBe("open");
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it("does not reconnect after an authentication close", () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() =>
+      useNotificationSocket({
+        token: "abc123",
+        baseUrl: "ws://localhost:8000",
+      }),
+    );
+
+    act(() => FakeWebSocket.instances[0].onclose({ code: 4401 }));
+    act(() => vi.advanceTimersByTime(60000));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    unmount();
+  });
+
+  it("clears a pending reconnect when unmounted", () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() =>
+      useNotificationSocket({
+        token: "abc123",
+        baseUrl: "ws://localhost:8000",
+      }),
+    );
+
+    act(() => FakeWebSocket.instances[0].onclose({ code: 1006 }));
+    unmount();
+    act(() => vi.advanceTimersByTime(60000));
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
   });
 });
