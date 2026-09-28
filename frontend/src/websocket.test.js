@@ -71,6 +71,54 @@ describe("connectConversation", () => {
     expect(FakeWebSocket.instances[0].readyState).toBe(3);
   });
 
+  it("rejects sends until the conversation socket is open", () => {
+    const connection = connectConversation({
+      conversationId: 42,
+      token: "abc123",
+      baseUrl: "ws://localhost:8000",
+    });
+
+    expect(() => connection.sendMessage("Bonjour")).toThrow(
+      "WebSocket is not open",
+    );
+    expect(() => connection.markConversationRead()).toThrow(
+      "WebSocket is not open",
+    );
+    expect(FakeWebSocket.instances[0].sentMessages).toEqual([]);
+  });
+
+  it("reports malformed conversation payloads as invalid_payload", () => {
+    const onEvent = vi.fn();
+    const connection = connectConversation({
+      conversationId: 42,
+      token: "abc123",
+      baseUrl: "ws://localhost:8000",
+      onEvent,
+    });
+
+    FakeWebSocket.instances[0].onmessage({ data: "not-json" });
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "error", code: "invalid_payload" }),
+    );
+    connection.close();
+  });
+
+  it("exposes conversation socket error and close states", () => {
+    const connection = connectConversation({
+      conversationId: 42,
+      token: "abc123",
+      baseUrl: "ws://localhost:8000",
+    });
+    const fakeSocket = FakeWebSocket.instances[0];
+
+    fakeSocket.onerror();
+    expect(connection.status).toBe("error");
+
+    fakeSocket.onclose({ code: 1006 });
+    expect(connection.status).toBe("closed");
+  });
+
   it("sends message.send payloads and listens for message.created", () => {
     const events = [];
     const socket = connectConversation({
@@ -176,5 +224,35 @@ describe("connectNotifications", () => {
 
     expect(events).toContainEqual(notification);
     connection.close();
+  });
+
+  it("reports malformed notification payloads as invalid_payload", () => {
+    const onEvent = vi.fn();
+    const connection = connectNotifications({
+      token: "abc123",
+      baseUrl: "ws://localhost:8000",
+      onEvent,
+    });
+
+    FakeWebSocket.instances[0].onmessage({ data: "not-json" });
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "error", code: "invalid_payload" }),
+    );
+    connection.close();
+  });
+
+  it("exposes notification socket error and close states", () => {
+    const connection = connectNotifications({
+      token: "abc123",
+      baseUrl: "ws://localhost:8000",
+    });
+    const fakeSocket = FakeWebSocket.instances[0];
+
+    fakeSocket.onerror();
+    expect(connection.status).toBe("error");
+
+    fakeSocket.onclose({ code: 1006 });
+    expect(connection.status).toBe("closed");
   });
 });
