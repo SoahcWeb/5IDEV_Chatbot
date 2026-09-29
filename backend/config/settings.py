@@ -77,6 +77,7 @@ WEBSOCKET_ALLOWED_ORIGINS = [
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'channels',
     'corsheaders',
     'django.contrib.admin',
