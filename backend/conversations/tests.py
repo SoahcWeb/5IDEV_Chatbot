@@ -99,6 +99,28 @@ class ConversationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual([item['id'] for item in response.data], [own.id])
 
+    def test_list_orders_conversations_by_latest_message_activity(self):
+        first = self.create_private(other=self.bob)
+        second = self.create_private(other=self.charlie)
+        old_timestamp = timezone.now() - timedelta(days=1)
+        Conversation.objects.filter(pk__in=(first.pk, second.pk)).update(
+            updated_at=old_timestamp,
+        )
+        Message.objects.create(
+            conversation=first,
+            author=self.alice,
+            content='Latest activity',
+        )
+        self.authenticate(self.alice)
+
+        response = self.client.get(self.list_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [item['id'] for item in response.data],
+            [first.id, second.id],
+        )
+
     def test_outsider_cannot_view_conversation(self):
         conversation = self.create_private()
         self.authenticate(self.charlie)
