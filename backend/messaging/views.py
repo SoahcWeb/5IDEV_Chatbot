@@ -8,6 +8,7 @@ from .models import Message
 from .pagination import MessagePagination
 from .permissions import IsMessageAuthor
 from .serializers import CreateMessageSerializer, MessageSerializer
+from .services import create_and_broadcast_message
 
 
 def conversation_for(user, conversation_id):
@@ -39,7 +40,8 @@ class ConversationMessageListCreateView(generics.ListCreateAPIView):
         return MessageSerializer
 
     def perform_create(self, serializer):
-        serializer.save(
+        create_and_broadcast_message(
+            serializer,
             conversation=self.get_conversation(),
             author=self.request.user,
         )
