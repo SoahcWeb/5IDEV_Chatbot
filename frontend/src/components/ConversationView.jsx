@@ -64,6 +64,11 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   }, [socketMessages])
 
   useEffect(() => {
+    if (socketMessages.length === 0 || !document.hasFocus()) return
+    markConversationRead()
+  }, [markConversationRead, socketMessages])
+
+  useEffect(() => {
     if (socketStatus === 'open') markConversationRead()
   }, [markConversationRead, socketStatus])
 
