@@ -1,225 +1,201 @@
-# Déploiement futur sur Render
+# Déploiement sur Render
 
-Ce document prépare le déploiement du projet sans créer de ressource Render. Les noms, URL et secrets ci-dessous sont des exemples génériques : aucune valeur locale ne doit être copiée en production.
+Ce guide décrit la configuration à appliquer. Il ne crée aucun service Render
+et ne contient aucun secret réel.
 
-## 1. Architecture cible
+## Architecture et services
 
-Le frontend React communique avec le backend Django via l'API REST et les WebSockets :
+Créer quatre services, idéalement dans la même région :
 
-```text
-Frontend React + Vite
-        |
-        | HTTPS (API) et WSS (temps réel)
-        v
-Backend Django / Django REST Framework
-        |
-        v
-Daphne / ASGI
-        |-- PostgreSQL (données persistantes)
-        |-- Render Key Value, compatible Redis (Django Channels)
-        `-- WebSockets (conversations et notifications)
-```
+1. un **Web Service** Python pour Django, DRF, Channels et Daphne ;
+2. une base **Render Postgres** ;
+3. une instance **Render Key Value** compatible Redis ;
+4. un **Static Site** pour le frontend React/Vite.
 
-WhiteNoise sert les fichiers statiques Django collectés dans `STATIC_ROOT`. Le build du frontend Vite reste séparé de celui du backend.
+PostgreSQL est la source de vérité persistante. Key Value sert uniquement de
+channel layer à Django Channels.
 
-## 2. Services Render à créer plus tard
+## Paramètres présents dans le dépôt
 
-- un **Web Service** Python pour Django, DRF, Channels et Daphne ;
-- une base **Render Postgres** ;
-- une instance **Render Key Value**, compatible avec le client Redis utilisé par Channels ;
-- éventuellement un **Static Site** distinct pour le frontend React/Vite.
+Le dépôt fournit déjà :
 
-Il n'est pas nécessaire de choisir les noms exacts avant le déploiement. Les services de données et le backend devraient être placés dans la même région lorsque Render permet ce choix, afin d'utiliser leurs URL internes et de limiter la latence.
+- l'application ASGI `config.asgi:application` pour HTTP et WebSocket ;
+- Daphne, `channels_redis`, `psycopg`, `dj-database-url` et WhiteNoise ;
+- `STATIC_ROOT` et le stockage statique WhiteNoise avec manifeste compressé ;
+- la lecture de toutes les variables décrites ci-dessous ;
+- `DJANGO_ENV=production`, qui interdit `DEBUG=True` et exige la clé secrète,
+  PostgreSQL et Redis au lieu des replis locaux SQLite et mémoire ;
+- les variables Vite `VITE_API_URL` et `VITE_WS_URL`.
 
-## 3. Repository et branche
+Le dépôt ne contient pas de `render.yaml`. Les services, leurs domaines, leurs
+variables, leurs commandes et l'auto-deploy doivent donc être configurés dans
+Render.
 
-- Repository GitHub : `SoahcWeb/5IDEV_Chatbot`
-- Branche de production : `main`
+## Backend : Web Service
 
-La branche `main` devra contenir la configuration de production validée avant de connecter le repository à Render.
+Repository : `SoahcWeb/5IDEV_Chatbot`
 
-## 4. Root Directory du backend
+Branche de production : `main`
 
-Configurer le **Root Directory** du Web Service sur :
+Root Directory :
 
 ```text
 backend
 ```
 
-Ce choix est confirmé par la structure du repository : `manage.py`, `requirements.txt` et le package Django `config` se trouvent tous dans `backend/`. Les commandes Render ci-dessous sont donc exécutées depuis ce répertoire.
-
-## 5. Build Command du backend
-
-Commande proposée :
+Build Command :
 
 ```sh
 pip install -r requirements.txt && python manage.py collectstatic --noinput
 ```
 
-Elle installe les dépendances déclarées puis collecte les fichiers statiques Django dans `STATIC_ROOT`. WhiteNoise est déjà installé et configuré pour les servir. Aucun build frontend n'est nécessaire dans ce Web Service, puisque le frontend est séparé.
-
-La migration de la base est volontairement traitée à part dans la section suivante.
-
-## 6. Start Command du backend
-
-Commande proposée :
-
-```sh
-daphne -b 0.0.0.0 -p $PORT config.asgi:application
-```
-
-Render fournit la variable `$PORT`. Le module `backend/config/asgi.py` expose bien `application`, et `daphne` figure dans `backend/requirements.txt`. Cette commande sert à la fois les requêtes HTTP et les connexions WebSocket via ASGI.
-
-## 7. Migrations
-
-La commande à exécuter après avoir relié le backend à PostgreSQL est :
+Pre-Deploy Command recommandée :
 
 ```sh
 python manage.py migrate
 ```
 
-Ordre recommandé selon le plan choisi :
+Start Command :
 
-1. **Si la commande Pre-Deploy est disponible pour le Web Service**, la définir à `python manage.py migrate`. C'est l'option recommandée : Render l'exécute après le build et avant la mise en service de la nouvelle version. Elle pourra rester configurée pour les déploiements suivants.
-2. **Avec un Web Service gratuit**, vérifier les fonctionnalités proposées au moment du déploiement. La documentation Render indique actuellement que la commande Pre-Deploy est réservée à certains services payants. Pour le premier déploiement gratuit, ajouter temporairement `&& python manage.py migrate` à la fin de la Build Command, puis déclencher le déploiement :
-
-   ```sh
-   pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
-   ```
-
-3. Autre possibilité ponctuelle : lancer `python manage.py migrate` depuis une machine de confiance en utilisant l'URL **externe** de PostgreSQL. Cette méthode impose de protéger strictement l'URL et d'autoriser la connexion ; l'Internal Database URL de Render n'est pas destinée à un poste local.
-
-Ne pas lancer les migrations avant que `DATABASE_URL` pointe vers la base de production. Après l'opération, contrôler les logs et vérifier que toutes les migrations sont appliquées.
-
-## 8. Variables d'environnement du backend
-
-Configurer ces variables dans l'environnement du Web Service, sans les ajouter au repository :
-
-| Variable | Rôle | Exemple générique | Origine de la valeur |
-|---|---|---|---|
-| `DJANGO_SECRET_KEY` | Signe les sessions et les données cryptographiques Django. | Une nouvelle valeur aléatoire longue, jamais affichée dans ce document. | Générée pour la production et définie manuellement comme secret dans Render. |
-| `DJANGO_DEBUG` | Active ou désactive le mode debug. | `False` | Définie manuellement. Toujours `False` en production. |
-| `DJANGO_ALLOWED_HOSTS` | Liste séparée par des virgules des hôtes acceptés par Django. | `example.onrender.com` | Définie manuellement lorsque l'hostname réel du backend est connu. |
-| `DATABASE_URL` | Chaîne de connexion PostgreSQL lue par `dj-database-url`. | `postgresql://USER:PASSWORD@HOST:PORT/DATABASE` | Fournie par Render Postgres : utiliser l'Internal Database URL dans le Web Service. |
-| `REDIS_URL` | Connexion Key Value/Redis utilisée par `channels_redis`. | `redis://USER:PASSWORD@HOST:PORT` | Fournie par Render Key Value : utiliser l'Internal Redis URL dans le Web Service. |
-
-Les exemples ne sont pas des identifiants valides. Utiliser de préférence la fonctionnalité Render permettant de référencer une propriété d'un datastore plutôt que de recopier sa valeur lorsqu'elle est disponible.
-
-## 9. Clé secrète de production
-
-Créer une nouvelle `DJANGO_SECRET_KEY` spécialement pour la production :
-
-- ne jamais réutiliser la clé locale ;
-- ne jamais la committer dans Git ;
-- ne jamais l'écrire dans cette documentation, une capture d'écran ou un ticket ;
-- la stocker uniquement comme variable secrète dans Render et dans un gestionnaire de secrets si une sauvegarde est nécessaire.
-
-## 10. PostgreSQL
-
-Connexion prévue :
-
-```text
-Render Postgres
-    -> Internal Database URL
-    -> DATABASE_URL du Web Service
+```sh
+daphne -b 0.0.0.0 -p $PORT config.asgi:application
 ```
 
-La configuration existante lit `DATABASE_URL`. Quand elle est définie, `dj-database-url` configure automatiquement PostgreSQL. En son absence, le projet utilise SQLite, ce qui convient au local et à la CI mais pas au déploiement Render : le système de fichiers du Web Service n'est pas un stockage durable.
+Render fournit `$PORT`. La Pre-Deploy Command est préférable, car elle applique
+les migrations après un build réussi et avant la mise en service de la nouvelle
+version. Si le plan choisi ne la propose pas, appliquer ponctuellement les
+migrations depuis un environnement de confiance connecté à PostgreSQL. En
+dernier recours, elles peuvent être ajoutées à la Build Command :
 
-Créer la base seulement au moment opportun, puis injecter son URL interne dans le backend avant les migrations.
-
-## 11. Key Value / Redis
-
-Connexion prévue :
-
-```text
-Render Key Value (compatible Redis)
-    -> Internal Redis URL
-    -> REDIS_URL du Web Service
+```sh
+pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
 ```
 
-La configuration existante sélectionne automatiquement `channels_redis.core.RedisChannelLayer` quand `REDIS_URL` est définie. Sans cette variable, elle utilise `InMemoryChannelLayer`, adapté au local et à la CI mais pas à plusieurs processus ou instances en production.
+Ne jamais exécuter les migrations avant que `DATABASE_URL` pointe vers la base
+de production.
 
-## 12. `ALLOWED_HOSTS`
+## Variables du backend à configurer dans Render
 
-Une fois l'URL publique du backend attribuée par Render, définir uniquement son hostname, sans protocole ni chemin :
+Toutes ces variables appartiennent à l'environnement du Web Service. Elles ne
+doivent pas être ajoutées au dépôt.
+
+| Variable | Valeur attendue |
+|---|---|
+| `DJANGO_ENV` | `production` |
+| `DJANGO_SECRET_KEY` | Nouvelle valeur longue et aléatoire stockée comme secret |
+| `DJANGO_DEBUG` | `False` |
+| `DJANGO_ALLOWED_HOSTS` | Hostname du backend, sans schéma ni chemin |
+| `CORS_ALLOWED_ORIGINS` | Origine HTTPS exacte du frontend |
+| `CSRF_TRUSTED_ORIGINS` | Origine HTTPS exacte du frontend |
+| `WEBSOCKET_ALLOWED_ORIGINS` | Origine HTTPS exacte du frontend |
+| `DATABASE_URL` | Internal Database URL de Render Postgres |
+| `REDIS_URL` | Internal Redis URL de Render Key Value |
+| `DJANGO_SECURE_SSL_REDIRECT` | `True` |
+| `DJANGO_SECURE_HSTS_SECONDS` | `0` au premier déploiement |
+
+Les listes d'hôtes ou d'origines acceptent plusieurs valeurs séparées par des
+virgules. `DJANGO_ALLOWED_HOSTS` ne contient que des hostnames. Les trois
+variables d'origine contiennent le schéma `https://`.
+
+`DEMO_USER_PASSWORD` n'est utile que si la commande de création des comptes de
+démonstration est volontairement exécutée. Elle n'est pas requise par le
+service normal.
+
+### HTTPS et HSTS
+
+Render termine TLS et transmet le protocole d'origine. Django fait confiance à
+`X-Forwarded-Proto` via `SECURE_PROXY_SSL_HEADER`, ce qui évite une boucle quand
+`SECURE_SSL_REDIRECT=True`. En mode production, la redirection HTTPS est activée
+par défaut et peut aussi être explicitée dans Render.
+
+HSTS reste initialement à `0`. Après validation du domaine, de HTTPS et de tous
+les sous-domaines concernés, augmenter progressivement
+`DJANGO_SECURE_HSTS_SECONDS`. Le réglage active alors `includeSubDomains`, mais
+pas le preload. HSTS ne doit pas être activé à la légère, car les navigateurs le
+mémorisent et une mauvaise configuration peut rendre le site inaccessible.
+
+## PostgreSQL et Redis
+
+Relier les propriétés internes des datastores au Web Service :
 
 ```text
-DJANGO_ALLOWED_HOSTS=<hostname Render réel>
+Render Postgres Internal Database URL -> DATABASE_URL
+Render Key Value Internal Redis URL   -> REDIS_URL
 ```
 
-Ne pas inventer cet hostname à l'avance. Si un domaine personnalisé est ajouté plus tard, l'ajouter à la liste séparée par des virgules.
+Quand `DJANGO_ENV=production`, l'absence de l'une de ces variables arrête le
+backend avec une erreur de configuration explicite. En développement, leur
+absence conserve volontairement SQLite et `InMemoryChannelLayer`.
 
-## 13. HTTPS et WebSockets
+## Frontend : Static Site
 
-Schémas à utiliser :
+Root Directory :
 
-| Environnement | API | WebSocket |
-|---|---|---|
-| Développement | `http://` | `ws://` |
-| Production | `https://` | `wss://` |
+```text
+frontend
+```
 
-Le frontend de production doit donc construire les URL WebSocket avec `wss://`. Les routes actuellement exposées incluent `/ws/notifications/` et `/ws/conversations/<id>/`. Une page servie en HTTPS ne doit pas essayer d'ouvrir une connexion WebSocket non sécurisée en `ws://`.
+Build Command :
 
-## 14. Frontend React/Vite
+```sh
+npm ci && npm run build
+```
 
-Le frontend pourra être déployé séparément, par exemple comme Static Site Render :
+Publish Directory :
 
-1. utiliser `frontend` comme Root Directory ;
-2. installer les dépendances puis lancer le build Vite (`npm ci && npm run build`) ;
-3. publier le répertoire produit par Vite, normalement `dist` ;
-4. définir, selon la convention qui sera choisie dans le code frontend, l'URL HTTPS publique de l'API backend ;
-5. définir l'URL WSS publique du même backend pour les WebSockets ;
-6. reconstruire le frontend après toute modification de ses variables de build.
+```text
+dist
+```
 
-Les noms exacts des variables frontend restent à déterminer lors de son intégration : la configuration actuelle ne définit pas encore de variable Vite dédiée à ces URL. Aucun changement frontend n'est effectué par cette procédure.
+Un Static Site n'a pas de Start Command.
 
-## 15. Ordre de déploiement conseillé
+Variables de build à configurer dans Render :
 
-1. Créer Render Postgres au dernier moment afin de ne pas démarrer inutilement la période du plan gratuit.
-2. Créer Render Key Value dans la région retenue.
-3. Créer le Web Service backend depuis `SoahcWeb/5IDEV_Chatbot`, branche `main`, Root Directory `backend`.
-4. Définir les cinq variables d'environnement et vérifier qu'aucun secret n'apparaît dans les logs.
-5. Lancer le build avec la Build Command proposée.
-6. Exécuter les migrations avec la méthode adaptée au plan Render retenu.
-7. Tester une route API réelle sous `/api/`, par exemple l'authentification ou la liste des conversations ; `/api/` seul n'est pas actuellement une route dédiée.
-8. Tester les connexions `wss://` aux routes de conversation et de notification.
-9. Déployer le frontend, puis lui fournir les URL publiques HTTPS et WSS du backend.
-10. Effectuer un test de bout en bout avec deux utilisateurs distincts.
+```env
+VITE_API_URL=https://<hostname-backend>/api
+VITE_WS_URL=wss://<hostname-backend>
+```
 
-## 16. Checklist avant la présentation
+Ces valeurs sont intégrées au bundle lors du build. Toute modification exige un
+nouveau déploiement du frontend. Sans elles, le code utilise ses valeurs locales
+`localhost`, qui ne conviennent pas en production.
 
-- [ ] Base PostgreSQL disponible et non expirée
-- [ ] Backend réveillé avant la démonstration
-- [ ] Frontend accessible
+Si React Router doit servir une route directement depuis le Static Site,
+configurer une règle de rewrite Render de `/*` vers `/index.html`.
+
+## Auto-deploy et CI
+
+Le workflow GitHub Actions teste les pushes et pull requests visant `main`, mais
+il ne déploie rien. Dans chaque service Render, connecter `main` et activer
+l'auto-deploy seulement lorsque cette politique est souhaitée. Cette option est
+un paramètre Render, pas un paramètre actuellement versionné dans le dépôt.
+
+## Ordre recommandé
+
+1. Fusionner dans `main` une version dont les validations backend et frontend
+   passent.
+2. Créer PostgreSQL et Key Value dans la région retenue.
+3. Créer le Web Service backend et renseigner toutes ses variables.
+4. Construire le backend, appliquer les migrations, puis démarrer Daphne.
+5. Tester une route API en HTTPS et les sockets de conversation et notification
+   en WSS.
+6. Créer le Static Site avec les deux variables Vite et la règle de rewrite.
+7. Tester inscription/connexion, conversations, messages, notifications et
+   compteurs avec deux utilisateurs.
+8. Activer l'auto-deploy depuis `main` si souhaité.
+9. Après validation complète de HTTPS, décider d'une montée progressive de la
+   durée HSTS.
+
+## Checklist avant mise en service
+
+- [ ] `DJANGO_ENV=production` et `DJANGO_DEBUG=False`
+- [ ] Nouvelle clé secrète configurée sans apparaître dans les logs
+- [ ] URL internes PostgreSQL et Redis reliées
 - [ ] Migrations appliquées
-- [ ] Test de connexion utilisateur réussi
-- [ ] Test de création/ouverture d'une conversation réussi
-- [ ] Test d'envoi et de réception d'un message en temps réel réussi
-- [ ] Test de notification réussi
-- [ ] Test de `unread_count` réussi
-- [ ] Test effectué dans deux navigateurs ou avec deux utilisateurs
-- [ ] Connexions WebSocket en `wss://`
-- [ ] Aucun secret exposé dans Git, le frontend, les logs ou les captures d'écran
-
-## 17. Limites du plan gratuit
-
-Les conditions Render peuvent évoluer ; les vérifier dans la [documentation officielle des instances gratuites](https://render.com/docs/free) juste avant de créer les services.
-
-- un Web Service gratuit peut s'endormir après une période d'inactivité et subir un délai au premier réveil ; le réveiller avant la présentation ;
-- une base PostgreSQL gratuite a une durée de disponibilité limitée ; ne la créer que lorsque le calendrier de présentation est fixé et prévoir la sauvegarde ou le passage à une offre adaptée ;
-- une instance Key Value gratuite peut ne pas garantir la persistance des données lors d'un redémarrage ; elle doit servir au transport temps réel, pas comme source de vérité métier ;
-- les fonctionnalités accessibles, notamment la commande Pre-Deploy, doivent être revérifiées selon le type de service et le plan choisis.
-
-Références à consulter au moment du déploiement : [déploiements et commande Pre-Deploy](https://render.com/docs/deploys), [déploiement Django](https://render.com/docs/deploy-django) et [Render Key Value](https://render.com/docs/key-value).
-
-## 18. Contrôle final le jour du déploiement
-
-Avant la présentation :
-
-1. relire les conditions du plan Render en vigueur ;
-2. confirmer les URL internes PostgreSQL et Key Value ;
-3. confirmer l'hostname public et `DJANGO_ALLOWED_HOSTS` ;
-4. contrôler les logs du build, des migrations et du démarrage Daphne ;
-5. exécuter toute la checklist avec deux utilisateurs ;
-6. conserver un plan de repli si un service gratuit met du temps à se réveiller.
+- [ ] `collectstatic` réussi
+- [ ] Hostname backend et origines frontend exacts
+- [ ] API HTTPS et WebSockets WSS testés
+- [ ] Variables Vite présentes au moment du build
+- [ ] Rewrite SPA configuré
+- [ ] Test de bout en bout avec deux utilisateurs
+- [ ] Politique d'auto-deploy vérifiée
