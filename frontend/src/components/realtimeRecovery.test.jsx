@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   },
   conversationOptions: { current: null },
   notificationOptions: { current: null },
+  notificationEvents: { current: [] },
 }));
 
 vi.mock("../api/client.js", () => ({
@@ -35,13 +36,16 @@ vi.mock("../useConversationSocket.js", () => ({
 vi.mock("../useNotificationSocket.js", () => ({
   useNotificationSocket: (options) => {
     mocks.notificationOptions.current = options;
-    return { events: [] };
+    return { events: mocks.notificationEvents.current };
   },
+}));
+
+vi.mock("../context/AuthContext.jsx", () => ({
+  useAuth: () => ({ user: { username: "test-user" }, logout: vi.fn() }),
 }));
 
 vi.mock("./MessageList.jsx", () => ({ default: () => null }));
 vi.mock("./MessageInput.jsx", () => ({ default: () => null }));
-vi.mock("./Sidebar.jsx", () => ({ default: () => null }));
 vi.mock("./NewConversationModal.jsx", () => ({ default: () => null }));
 
 describe("real-time recovery", () => {
@@ -49,6 +53,7 @@ describe("real-time recovery", () => {
     vi.clearAllMocks();
     mocks.conversationOptions.current = null;
     mocks.notificationOptions.current = null;
+    mocks.notificationEvents.current = [];
     mocks.api.listConversations.mockResolvedValue({ results: [] });
     mocks.api.listMessages.mockResolvedValue({ results: [] });
   });
@@ -86,5 +91,52 @@ describe("real-time recovery", () => {
     });
 
     expect(mocks.api.listConversations).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a notification and unread badge for a conversation that is not selected", async () => {
+    mocks.api.listConversations.mockResolvedValue({
+      results: [
+        { id: 1, name: "Projet Alpha", unread_count: 0 },
+        { id: 2, name: "Projet Beta", unread_count: 0 },
+      ],
+    });
+
+    const renderChatPage = () => (
+      <MemoryRouter initialEntries={["/chat?c=1"]}>
+        <ChatPage />
+      </MemoryRouter>
+    );
+    const { rerender } = render(renderChatPage());
+
+    await screen.findByText("Projet Beta");
+    await waitFor(() =>
+      expect(document.querySelector(".conv-item.active")?.textContent).toContain(
+        "Projet Alpha",
+      ),
+    );
+
+    mocks.notificationEvents.current = [{
+      type: "notification.message",
+      conversation: 2,
+      message: { id: 7, content: "Nouveau message" },
+      unread_count: 3,
+    }];
+    act(() => rerender(renderChatPage()));
+
+    const toast = await screen.findByRole("button", {
+      name: /Projet Beta.*Nouveau message/,
+    });
+    const conversationRows = [...document.querySelectorAll(".conv-item")];
+    const alphaRow = conversationRows.find((row) =>
+      row.textContent.includes("Projet Alpha"),
+    );
+    const betaRow = conversationRows.find((row) =>
+      row.textContent.includes("Projet Beta"),
+    );
+
+    expect(toast.textContent).toContain("Nouveau message");
+    expect(alphaRow?.classList.contains("active")).toBe(true);
+    expect(alphaRow?.querySelector(".badge")).toBeNull();
+    expect(betaRow?.querySelector(".badge")?.textContent).toBe("3");
   });
 });
