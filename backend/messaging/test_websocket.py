@@ -1,11 +1,13 @@
 from datetime import timedelta
 
 from asgiref.sync import async_to_sync
+from channels.db import database_sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
+from rest_framework.test import APIClient
 
 from config.asgi import application
 from conversations.models import Conversation, ConversationMember
@@ -337,6 +339,8 @@ class ChatConsumerTests(TransactionTestCase):
             self.assertEqual(notification['unread_count'], 1)
             self.assertTrue(await alice_notifications.receive_nothing(timeout=0.1))
             self.assertTrue(await charlie_notifications.receive_nothing(timeout=0.1))
+            self.assertTrue(await chat.receive_nothing(timeout=0.1))
+            self.assertTrue(await bob_notifications.receive_nothing(timeout=0.1))
 
             await chat.disconnect()
             await alice_notifications.disconnect()
@@ -344,6 +348,68 @@ class ChatConsumerTests(TransactionTestCase):
             await charlie_notifications.disconnect()
 
         async_to_sync(scenario)()
+
+    def test_rest_message_uses_same_realtime_events_without_duplicates(self):
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f'Token {self.alice_token.key}'
+        )
+
+        async def scenario():
+            alice_chat, alice_chat_connected, _ = await self.connect(
+                self.socket_path(token=self.alice_token)
+            )
+            bob_chat, bob_chat_connected, _ = await self.connect(
+                self.socket_path(token=self.bob_token)
+            )
+            alice_notifications, alice_notifications_connected, _ = await self.connect(
+                self.notification_path(self.alice_token)
+            )
+            bob_notifications, bob_notifications_connected, _ = await self.connect(
+                self.notification_path(self.bob_token)
+            )
+            self.assertTrue(all((
+                alice_chat_connected,
+                bob_chat_connected,
+                alice_notifications_connected,
+                bob_notifications_connected,
+            )))
+
+            response = await database_sync_to_async(client.post)(
+                f'/api/conversations/{self.conversation.pk}/messages/',
+                {'content': ' REST notification '},
+                format='json',
+            )
+            alice_event = await alice_chat.receive_json_from()
+            bob_event = await bob_chat.receive_json_from()
+            notification = await bob_notifications.receive_json_from()
+
+            self.assertEqual(response.status_code, 201)
+            self.assertEqual(alice_event, bob_event)
+            self.assertEqual(alice_event['type'], 'message.created')
+            self.assertEqual(alice_event['message'], response.data)
+            self.assertEqual(notification, {
+                'type': 'notification.message',
+                'conversation': self.conversation.pk,
+                'message': response.data,
+                'unread_count': 1,
+            })
+            self.assertTrue(await alice_notifications.receive_nothing(timeout=0.1))
+            self.assertTrue(await alice_chat.receive_nothing(timeout=0.1))
+            self.assertTrue(await bob_chat.receive_nothing(timeout=0.1))
+            self.assertTrue(await bob_notifications.receive_nothing(timeout=0.1))
+
+            await alice_chat.disconnect()
+            await bob_chat.disconnect()
+            await alice_notifications.disconnect()
+            await bob_notifications.disconnect()
+            return response.data['id']
+
+        message_id = async_to_sync(scenario)()
+        message = Message.objects.get(pk=message_id)
+        self.assertEqual(message.author, self.alice)
+        self.assertEqual(message.conversation, self.conversation)
+        self.assertEqual(message.content, 'REST notification')
 
     def test_group_message_notifies_all_other_members_with_correct_counts(self):
         group = Conversation.objects.create(

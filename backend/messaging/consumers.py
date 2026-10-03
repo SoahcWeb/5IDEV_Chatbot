@@ -5,9 +5,9 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.utils import timezone
 
 from conversations.models import Conversation, ConversationMember
-from conversations.unread import unread_counts_for_members
 
 from .serializers import CreateMessageSerializer, MessageSerializer
+from .services import create_and_broadcast_message
 
 
 class NotificationConsumer(AsyncJsonWebsocketConsumer):
@@ -110,7 +110,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.send_error('invalid_payload', 'Message content must be a string.')
             return
 
-        message_data, notifications, errors = await self.create_message(
+        message_data, errors = await self.create_message(
             self.scope['user'],
             content['content'],
         )
@@ -118,24 +118,6 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             detail = errors.get('content', ['Invalid message.'])[0]
             await self.send_error('invalid_message', str(detail))
             return
-
-        await self.channel_layer.group_send(
-            self.group_name,
-            {
-                'type': 'chat.message',
-                'message': message_data,
-            },
-        )
-        for notification in notifications:
-            await self.channel_layer.group_send(
-                f"user_{notification['user_id']}",
-                {
-                    'type': 'notification.message',
-                    'conversation': self.conversation_id,
-                    'message': message_data,
-                    'unread_count': notification['unread_count'],
-                },
-            )
 
     async def chat_message(self, event):
         await self.send_json({
@@ -165,33 +147,15 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     def create_message(self, user, content):
         serializer = CreateMessageSerializer(data={'content': content})
         if not serializer.is_valid():
-            return None, None, serializer.errors
+            return None, serializer.errors
 
-        message = serializer.save(
-            conversation_id=self.conversation_id,
+        conversation = Conversation.objects.get(pk=self.conversation_id)
+        message = create_and_broadcast_message(
+            serializer,
+            conversation=conversation,
             author=user,
         )
-        message = type(message).objects.select_related(
-            'author',
-            'conversation',
-        ).get(pk=message.pk)
-        recipient_ids = list(
-            ConversationMember.objects.filter(
-                conversation_id=self.conversation_id,
-            ).exclude(user=user).values_list('user_id', flat=True)
-        )
-        unread_counts = unread_counts_for_members(
-            self.conversation_id,
-            recipient_ids,
-        )
-        notifications = [
-            {
-                'user_id': user_id,
-                'unread_count': unread_counts[user_id],
-            }
-            for user_id in recipient_ids
-        ]
-        return MessageSerializer(message).data, notifications, None
+        return MessageSerializer(message).data, None
 
     @database_sync_to_async
     def mark_conversation_read(self, user):
