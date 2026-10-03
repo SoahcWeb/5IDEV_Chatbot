@@ -133,6 +133,42 @@ describe("real-time recovery", () => {
     expect(mocks.markConversationRead).not.toHaveBeenCalled();
   });
 
+  it("marks the selected conversation read when the window regains focus", async () => {
+    mocks.conversationStatus.current = "open";
+    mocks.api.listConversations.mockResolvedValue({
+      results: [{ id: 1, name: "Projet Alpha", unread_count: 2 }],
+    });
+    const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+
+    render(
+      <MemoryRouter initialEntries={["/chat?c=1"]}>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findAllByText("Projet Alpha");
+    const alphaRow = [...document.querySelectorAll(".conv-item")].find((row) =>
+      row.textContent.includes("Projet Alpha"),
+    );
+    expect(alphaRow?.querySelector(".badge")?.textContent).toBe("2");
+    expect(mocks.markConversationRead).not.toHaveBeenCalled();
+
+    hasFocus.mockReturnValue(true);
+    act(() => window.dispatchEvent(new Event("focus")));
+
+    await waitFor(() =>
+      expect(mocks.markConversationRead).toHaveBeenCalledTimes(1),
+    );
+    act(() => {
+      mocks.conversationOptions.current.onRead({
+        conversation: 1,
+        unread_count: 0,
+      });
+    });
+
+    expect(alphaRow?.querySelector(".badge")).toBeNull();
+  });
+
   it("refreshes conversation summaries only when notifications recover", async () => {
     render(
       <MemoryRouter>
@@ -195,5 +231,48 @@ describe("real-time recovery", () => {
     expect(alphaRow?.classList.contains("active")).toBe(true);
     expect(alphaRow?.querySelector(".badge")).toBeNull();
     expect(betaRow?.querySelector(".badge")?.textContent).toBe("3");
+  });
+
+  it("does not restore a stale unread badge when a focused conversation receives a notification", async () => {
+    mocks.api.listConversations.mockResolvedValue({
+      results: [
+        { id: 1, name: "Projet Alpha", unread_count: 0 },
+        { id: 2, name: "Projet Beta", unread_count: 0 },
+      ],
+    });
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+
+    const renderChatPage = () => (
+      <MemoryRouter initialEntries={["/chat?c=1"]}>
+        <ChatPage />
+      </MemoryRouter>
+    );
+    const { rerender } = render(renderChatPage());
+
+    await screen.findByText("Projet Beta");
+    await waitFor(() =>
+      expect(document.querySelector(".conv-item.active")?.textContent).toContain(
+        "Projet Alpha",
+      ),
+    );
+
+    act(() => {
+      mocks.conversationOptions.current.onRead({
+        conversation: 1,
+        unread_count: 0,
+      });
+    });
+    mocks.notificationEvents.current = [{
+      type: "notification.message",
+      conversation: 1,
+      message: { id: 8, content: "Message déjà lu" },
+      unread_count: 1,
+    }];
+    act(() => rerender(renderChatPage()));
+
+    const alphaRow = [...document.querySelectorAll(".conv-item")].find((row) =>
+      row.textContent.includes("Projet Alpha"),
+    );
+    expect(alphaRow?.querySelector(".badge")).toBeNull();
   });
 });

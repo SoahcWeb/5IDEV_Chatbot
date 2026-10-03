@@ -64,12 +64,50 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   }, [socketMessages])
 
   useEffect(() => {
-    if (socketMessages.length === 0 || !document.hasFocus()) return
+    if (
+      socketMessages.length === 0 ||
+      !document.hasFocus() ||
+      document.visibilityState !== 'visible'
+    ) return
     markConversationRead()
   }, [markConversationRead, socketMessages])
 
   useEffect(() => {
-    if (socketStatus === 'open') markConversationRead()
+    if (
+      socketStatus === 'open' &&
+      document.hasFocus() &&
+      document.visibilityState === 'visible'
+    ) {
+      markConversationRead()
+    }
+  }, [markConversationRead, socketStatus])
+
+  useEffect(() => {
+    if (socketStatus !== 'open') return undefined
+
+    let wasFocused =
+      document.hasFocus() && document.visibilityState === 'visible'
+    const markReadWhenFocused = () => {
+      const isFocused =
+        document.hasFocus() && document.visibilityState === 'visible'
+      if (!isFocused) {
+        wasFocused = false
+        return
+      }
+      if (wasFocused) return
+
+      wasFocused = true
+      markConversationRead()
+    }
+
+    window.addEventListener('focus', markReadWhenFocused)
+    window.addEventListener('blur', markReadWhenFocused)
+    document.addEventListener('visibilitychange', markReadWhenFocused)
+    return () => {
+      window.removeEventListener('focus', markReadWhenFocused)
+      window.removeEventListener('blur', markReadWhenFocused)
+      document.removeEventListener('visibilitychange', markReadWhenFocused)
+    }
   }, [markConversationRead, socketStatus])
 
   useEffect(() => {
