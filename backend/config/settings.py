@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -22,18 +23,42 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 
+ENVIRONMENT = os.environ.get('DJANGO_ENV', 'development').lower()
+IS_PRODUCTION = ENVIRONMENT == 'production'
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 
+if IS_PRODUCTION and not SECRET_KEY:
+    raise ImproperlyConfigured(
+        'DJANGO_SECRET_KEY is required when DJANGO_ENV=production.'
+    )
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
+
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured(
+        'DJANGO_DEBUG must be False when DJANGO_ENV=production.'
+    )
 
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = (
+    os.environ.get(
+        'DJANGO_SECURE_SSL_REDIRECT',
+        'True' if IS_PRODUCTION else 'False',
+    ).lower()
+    == 'true'
+)
+SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+SECURE_HSTS_PRELOAD = False
 
 DJANGO_ALLOWED_HOSTS = os.environ.get(
     'DJANGO_ALLOWED_HOSTS',
@@ -127,6 +152,11 @@ ASGI_APPLICATION = 'config.asgi.application'
 
 REDIS_URL = os.environ.get('REDIS_URL')
 
+if IS_PRODUCTION and not REDIS_URL:
+    raise ImproperlyConfigured(
+        'REDIS_URL is required when DJANGO_ENV=production.'
+    )
+
 if REDIS_URL:
     CHANNEL_LAYERS = {
         'default': {
@@ -148,6 +178,11 @@ else:
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
+
+if IS_PRODUCTION and not DATABASE_URL:
+    raise ImproperlyConfigured(
+        'DATABASE_URL is required when DJANGO_ENV=production.'
+    )
 
 if DATABASE_URL:
     DATABASES = {
