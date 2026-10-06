@@ -13,6 +13,7 @@ export default function ChatPage() {
   const [params, setParams] = useSearchParams()
   const [toast, setToast] = useState(null)
   const conversationsRef = useRef(conversations)
+  const activeIdRef = useRef(activeId)
   const [notificationPermission, setNotificationPermission] = useState(() =>
     typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
   )
@@ -35,6 +36,7 @@ export default function ChatPage() {
   })
 
   conversationsRef.current = conversations
+  activeIdRef.current = activeId
   notificationPermissionRef.current = notificationPermission
 
   useEffect(() => {
@@ -49,13 +51,17 @@ export default function ChatPage() {
   useEffect(() => {
     const event = notificationEvents.at(-1)
     if (!event?.message || !event.conversation) return
+    const activeConversationIsFocused =
+      activeIdRef.current === event.conversation &&
+      document.hasFocus() &&
+      document.visibilityState === 'visible'
 
     setConversations((current) =>
       current.map((conversation) =>
         conversation.id === event.conversation
           ? {
               ...conversation,
-              unread_count: event.unread_count,
+              unread_count: activeConversationIsFocused ? 0 : event.unread_count,
               last_message: event.message,
             }
           : conversation,

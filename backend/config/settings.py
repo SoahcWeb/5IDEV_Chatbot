@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,9 +20,24 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-fallback-secret')
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() == 'true'
 # 👆 True par défaut maintenant (pratique en dev)
 
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured(
+        'DJANGO_DEBUG must be False when DJANGO_ENV=production.'
+    )
+
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = (
+    os.environ.get(
+        'DJANGO_SECURE_SSL_REDIRECT',
+        'True' if IS_PRODUCTION else 'False',
+    ).lower()
+    == 'true'
+)
+SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+SECURE_HSTS_PRELOAD = False
 
 
 # ---------- Hôtes ----------
@@ -127,6 +143,11 @@ ASGI_APPLICATION = 'config.asgi.application'
 # ---------- Channels ----------
 REDIS_URL = os.environ.get('REDIS_URL')
 
+if IS_PRODUCTION and not REDIS_URL:
+    raise ImproperlyConfigured(
+        'REDIS_URL is required when DJANGO_ENV=production.'
+    )
+
 if REDIS_URL:
     CHANNEL_LAYERS = {
         'default': {
@@ -144,6 +165,11 @@ else:
 
 # ---------- Base de données ----------
 DATABASE_URL = os.environ.get('DATABASE_URL')
+
+if IS_PRODUCTION and not DATABASE_URL:
+    raise ImproperlyConfigured(
+        'DATABASE_URL is required when DJANGO_ENV=production.'
+    )
 
 if DATABASE_URL:
     DATABASES = {
