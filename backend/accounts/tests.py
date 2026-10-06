@@ -15,6 +15,7 @@ class AuthenticationAPITests(APITestCase):
     logout_url = '/api/auth/logout/'
     me_url = '/api/auth/me/'
     users_url = '/api/auth/users/'
+    change_password_url = '/api/auth/change-password/'
 
     def registration_data(self, **overrides):
         data = {
@@ -153,6 +154,57 @@ class AuthenticationAPITests(APITestCase):
         )
         self.assertNotIn(current_user.id, [user['id'] for user in response.data])
         self.assertEqual(set(response.data[0]), {'id', 'username'})
+
+    def test_change_password_updates_password_for_authenticated_user(self):
+        user = self.create_user()
+        token = Token.objects.create(user=user)
+        self.authenticate_with(token)
+
+        response = self.client.post(
+            self.change_password_url,
+            {
+                'old_password': 'StrongPassword123!',
+                'new_password': 'NewStrongPassword456!',
+                'new_password_confirm': 'NewStrongPassword456!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('NewStrongPassword456!'))
+        self.assertNotEqual(response.data.get('detail'), 'Old password is incorrect.')
+
+    def test_change_password_rejects_wrong_old_password(self):
+        user = self.create_user()
+        token = Token.objects.create(user=user)
+        self.authenticate_with(token)
+
+        response = self.client.post(
+            self.change_password_url,
+            {
+                'old_password': 'WrongPassword123!',
+                'new_password': 'NewStrongPassword456!',
+                'new_password_confirm': 'NewStrongPassword456!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('old_password', response.data)
+
+    def test_change_password_requires_authenticated_user(self):
+        response = self.client.post(
+            self.change_password_url,
+            {
+                'old_password': 'StrongPassword123!',
+                'new_password': 'NewStrongPassword456!',
+                'new_password_confirm': 'NewStrongPassword456!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class SeedDemoUsersCommandTests(TestCase):
