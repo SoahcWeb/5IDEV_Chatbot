@@ -97,6 +97,16 @@ export const api = {
   me: () => request("/auth/me/"),
 
   logout: () => request("/auth/logout/", { method: "POST" }),
+  changePassword: (payload) =>
+    request("/auth/change-password/", {
+      method: "POST",
+      body: payload,
+    }),
+  changeEmail: (payload) =>
+    request("/auth/change-email/", {
+      method: "POST",
+      body: payload,
+    }),
 
   changePassword: (payload) =>
     request("/auth/change-password/", {

@@ -10,6 +10,7 @@ from .views import (
     UserListView,
 )
 
+
 app_name = 'accounts'
 
 urlpatterns = [
