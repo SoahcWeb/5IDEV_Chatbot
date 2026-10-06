@@ -9,6 +9,7 @@ from django.db import transaction
 DEMO_USERS = (
     ('alice_rt', 'alice_rt@example.test'),
     ('bob_rt', 'bob_rt@example.test'),
+    ('charlie_rt', 'charlie_rt@example.test'),
 )
 
 
@@ -19,7 +20,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--password',
             default=os.environ.get('DEMO_USER_PASSWORD'),
-            help='Password for both demo accounts (or set DEMO_USER_PASSWORD).',
+            help='Password for all demo accounts (or set DEMO_USER_PASSWORD).',
         )
 
     @transaction.atomic

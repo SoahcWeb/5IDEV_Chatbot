@@ -8,6 +8,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [membersOpen, setMembersOpen] = useState(false)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -25,6 +26,10 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   useEffect(() => {
     reload()
   }, [reload])
+
+  useEffect(() => {
+    setMembersOpen(false)
+  }, [conversation.id])
 
   const {
     status: socketStatus,
@@ -144,6 +149,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
 
   const title =
     conversation.name || conversation.title || `Conversation #${conversation.id}`
+  const isGroup = conversation.type === 'group'
 
   return (
     <div className="main">
@@ -159,15 +165,45 @@ export default function ConversationView({ conversation, onBack, onRead }) {
               : ''}
           </div>
         </div>
+        {isGroup && (
+          <button
+            className="btn btn-ghost member-toggle"
+            type="button"
+            aria-controls="conversation-members"
+            aria-expanded={membersOpen}
+            aria-label={membersOpen ? 'Masquer les membres' : 'Afficher les membres'}
+            onClick={() => setMembersOpen((open) => !open)}
+          >
+            Membres
+          </button>
+        )}
       </div>
-      {error && <div className="empty">{error}</div>}
-      <MessageList
-        messages={messages}
-        loading={loading}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
-      <MessageInput onSend={handleSend} />
+      <div className="conversation-content">
+        <section className="conversation-thread" aria-label="Conversation">
+          {error && <div className="empty">{error}</div>}
+          <MessageList
+            messages={messages}
+            loading={loading}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+          />
+          <MessageInput onSend={handleSend} />
+        </section>
+        {isGroup && (
+          <aside
+            id="conversation-members"
+            className={`group-members ${membersOpen ? 'is-open' : ''}`}
+            aria-labelledby="conversation-members-title"
+          >
+            <h2 id="conversation-members-title">Membres du groupe</h2>
+            <ul>
+              {(conversation.members ?? []).map((member) => (
+                <li key={member.id}>{member.username}</li>
+              ))}
+            </ul>
+          </aside>
+        )}
+      </div>
     </div>
   )
 }

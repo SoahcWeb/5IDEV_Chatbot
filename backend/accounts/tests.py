@@ -246,12 +246,13 @@ class AuthenticationAPITests(APITestCase):
 
 class SeedDemoUsersCommandTests(TestCase):
     @override_settings(DEBUG=True)
-    def test_command_creates_two_users_and_is_idempotent(self):
+    def test_command_creates_three_users_and_is_idempotent(self):
         call_command('seed_demo_users', password='Realtime-Test-2026!')
         call_command('seed_demo_users', password='Realtime-Test-2026!')
 
-        self.assertEqual(User.objects.filter(username__in=('alice_rt', 'bob_rt')).count(), 2)
-        for username in ('alice_rt', 'bob_rt'):
+        usernames = ('alice_rt', 'bob_rt', 'charlie_rt')
+        self.assertEqual(User.objects.filter(username__in=usernames).count(), 3)
+        for username in usernames:
             user = User.objects.get(username=username)
             self.assertTrue(user.check_password('Realtime-Test-2026!'))
             self.assertTrue(user.is_active)
