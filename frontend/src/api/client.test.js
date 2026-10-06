@@ -1,9 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { api } from './client.js'
 
 describe('api.createConversation', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('posts a private conversation to the private endpoint', async () => {
@@ -17,11 +21,11 @@ describe('api.createConversation', () => {
     await api.createConversation({ user_id: 2 })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/conversations/private/',
+      'http://localhost:8000/api/conversations/private/',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ user_id: 2 }),
-      }),
+      })
     )
   })
 
@@ -36,11 +40,11 @@ describe('api.createConversation', () => {
     await api.createConversation({ name: 'Equipe', member_ids: [2, 3] })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/conversations/group/',
+      'http://localhost:8000/api/conversations/group/',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ name: 'Equipe', member_ids: [2, 3] }),
-      }),
+      })
     )
   })
 
