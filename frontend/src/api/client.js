@@ -42,6 +42,11 @@ export const api = {
       method: "POST",
       body: payload,
     }),
+  changeEmail: (payload) =>
+    request("/auth/change-email/", {
+      method: "POST",
+      body: payload,
+    }),
 
   // Users
   listUsers: () => request("/auth/users/"),

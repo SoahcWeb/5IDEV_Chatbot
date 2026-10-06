@@ -71,3 +71,25 @@ class ChangePasswordSerializer(serializers.Serializer):
         user.set_password(self.validated_data['new_password'])
         user.save(update_fields=('password',))
         return user
+
+
+class ChangeEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    email_confirm = serializers.EmailField(required=True)
+
+    def validate(self, attrs):
+        if attrs['email'] != attrs['email_confirm']:
+            raise serializers.ValidationError(
+                {'email_confirm': 'Emails do not match.'}
+            )
+
+        user = self.context['request'].user
+        if User.objects.filter(email__iexact=attrs['email']).exclude(pk=user.pk).exists():
+            raise serializers.ValidationError({'email': 'A user with this email already exists.'})
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.context['request'].user
+        user.email = self.validated_data['email']
+        user.save(update_fields=('email',))
+        return user

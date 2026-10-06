@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .serializers import (
+    ChangeEmailSerializer,
     ChangePasswordSerializer,
     RegisterSerializer,
     UserListSerializer,
@@ -64,6 +65,14 @@ class ChangePasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({'detail': 'Password updated successfully.'})
+
+
+class ChangeEmailView(APIView):
+    def post(self, request):
+        serializer = ChangeEmailSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'detail': 'Email updated successfully.'})
 
 
 class UserListView(generics.ListAPIView):
