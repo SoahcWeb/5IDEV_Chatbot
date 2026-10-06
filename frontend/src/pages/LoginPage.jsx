@@ -15,7 +15,7 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      await login(username, password)
+      await login(username.trim(), password)
       navigate('/app')
     } catch (err) {
       setError(err.message)
@@ -34,12 +34,14 @@ export default function LoginPage() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoFocus
+          required
         />
         <input
           type="password"
           placeholder="Mot de passe"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          required
         />
         <button className="btn" disabled={loading}>
           {loading ? 'Connexion…' : 'Se connecter'}
