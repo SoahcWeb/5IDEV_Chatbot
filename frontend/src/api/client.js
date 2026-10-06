@@ -1,12 +1,13 @@
 // ============================================================
 //  API CLIENT — Django + DRF authtoken
 //  Backend : http://127.0.0.1:8000
-//  Routes  : /api/auth/{register,login,logout,me,users}/
+//  Routes  : /api/auth/* et /api/conversations/*
 //  Header  : Authorization: Token xxx
 // ============================================================
 
 const API_URL = '/api'
-const AUTH_PREFIX = '/auth'               // ⚠️ /auth (pas /accounts)
+const AUTH_PREFIX = '/auth'
+const CONVERSATIONS_PREFIX = '/conversations'
 const TIMEOUT_MS = 8000
 
 // ---------- Token ----------
@@ -73,6 +74,7 @@ async function request(path, options = {}) {
 
 // ---------- Endpoints ----------
 export const api = {
+  // ----- Auth -----
   register: (payload) =>
     request(`${AUTH_PREFIX}/register/`, {
       method: 'POST',
@@ -91,4 +93,23 @@ export const api = {
     request(`${AUTH_PREFIX}/logout/`, { method: 'POST' }),
 
   users: () => request(`${AUTH_PREFIX}/users/`),
+
+  // ----- Conversations -----
+  createConversation: (payload) => {
+    // Conversation privée (avec un user_id)
+    if (payload.user_id !== undefined) {
+      return request(`${CONVERSATIONS_PREFIX}/private/`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    }
+    // Conversation de groupe (avec name + member_ids)
+    if (payload.name && payload.member_ids) {
+      return request(`${CONVERSATIONS_PREFIX}/group/`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    }
+    throw new Error('Payload de conversation invalide')
+  },
 }
