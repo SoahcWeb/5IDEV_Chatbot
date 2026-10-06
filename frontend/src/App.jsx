@@ -3,6 +3,7 @@ import LandingPage from './pages/LandingPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 import ChatPage from './pages/ChatPage.jsx'
+import UserProfilePage from './pages/UserProfilePage.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 
 export default function App() {
@@ -16,6 +17,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ChatPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/app/profile"
+        element={
+          <ProtectedRoute>
+            <UserProfilePage />
           </ProtectedRoute>
         }
       />

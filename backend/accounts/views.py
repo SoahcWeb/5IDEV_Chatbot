@@ -5,7 +5,12 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import RegisterSerializer, UserListSerializer, UserSerializer
+from .serializers import (
+    ChangePasswordSerializer,
+    RegisterSerializer,
+    UserListSerializer,
+    UserSerializer,
+)
 
 
 User = get_user_model()
@@ -51,6 +56,14 @@ class LoginView(APIView):
 class CurrentUserView(APIView):
     def get(self, request):
         return Response(UserSerializer(request.user).data)
+
+
+class ChangePasswordView(APIView):
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'detail': 'Password updated successfully.'})
 
 
 class UserListView(generics.ListAPIView):

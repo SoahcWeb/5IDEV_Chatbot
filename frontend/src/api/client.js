@@ -37,6 +37,11 @@ export const api = {
     request("/auth/login/", { method: "POST", body: payload, auth: false }),
   me: () => request("/auth/me/"),
   logout: () => request("/auth/logout/", { method: "POST" }),
+  changePassword: (payload) =>
+    request("/auth/change-password/", {
+      method: "POST",
+      body: payload,
+    }),
 
   // Users
   listUsers: () => request("/auth/users/"),
