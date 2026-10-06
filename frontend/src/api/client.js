@@ -1,56 +1,57 @@
 // ============================================================
 //  API CLIENT — Django + DRF authtoken
-//  Backend : http://127.0.0.1:8000
-//  Routes  : /api/auth/* et /api/conversations/*
-//  Header  : Authorization: Token xxx
+//  Header : Authorization: Token xxx
+//  Clé localStorage : "auth_token"
 // ============================================================
 
-const API_URL = '/api'
-const AUTH_PREFIX = '/auth'
-const CONVERSATIONS_PREFIX = '/conversations'
+const API_URL =
+  import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+
+const TOKEN_KEY = 'auth_token'
 const TIMEOUT_MS = 8000
 
 // ---------- Token ----------
-let token = localStorage.getItem('token')
+export const getToken = () => localStorage.getItem(TOKEN_KEY)
 
 export const setToken = (t) => {
-  token = t
-  if (t) localStorage.setItem('token', t)
+  if (t) localStorage.setItem(TOKEN_KEY, t)
 }
 
-export const getToken = () => token
-
 export const clearToken = () => {
-  token = null
-  localStorage.removeItem('token')
+  localStorage.removeItem(TOKEN_KEY)
 }
 
 // ---------- Requête générique ----------
-async function request(path, options = {}) {
+async function request(path, { method = 'GET', body, auth = true } = {}) {
+  const headers = { 'Content-Type': 'application/json' }
+
+  if (auth) {
+    const token = getToken()
+    if (token) headers['Authorization'] = `Token ${token}`
+  }
+
+  const options = { method, headers }
+
+  if (body && method !== 'GET' && method !== 'HEAD') {
+    options.body = JSON.stringify(body)
+  }
+
+  // Timeout pour ne jamais bloquer indéfiniment
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
-
-  const hasBody = options.body !== undefined
+  options.signal = controller.signal
 
   let res
   try {
-    res = await fetch(`${API_URL}${path}`, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        ...(hasBody && { 'Content-Type': 'application/json' }),
-        ...(token && { Authorization: `Token ${token}` }),
-        ...options.headers,
-      },
-    })
+    res = await fetch(`${API_URL}${path}`, options)
   } catch (err) {
     if (err.name === 'AbortError') {
       throw new Error(
-        `Le serveur Django ne répond pas (timeout ${TIMEOUT_MS / 1000}s).`
+        `Le serveur ne répond pas (timeout ${TIMEOUT_MS / 1000}s).`
       )
     }
     throw new Error(
-      "Impossible de joindre le serveur Django (127.0.0.1:8000)."
+      "Impossible de joindre le serveur. Vérifie qu'il tourne sur 8000."
     )
   } finally {
     clearTimeout(timer)
@@ -58,58 +59,103 @@ async function request(path, options = {}) {
 
   if (res.status === 204) return null
 
-  const data = await res.json().catch(() => ({}))
+  const data = await res.json().catch(() => null)
 
   if (!res.ok) {
-    console.error('[API ERROR]', res.status, path, data)
-    let message = data.message || data.detail
-    if (!message && typeof data === 'object') {
-      const first = Object.values(data).flat()[0]
-      if (typeof first === 'string') message = first
-    }
-    throw new Error(message || `Erreur ${res.status}`)
+    console.error('[API ERROR]', res.status, method, path, data)
+
+    const msg =
+      data?.detail ||
+      data?.error ||
+      (data && Object.values(data).flat().join(' ')) ||
+      `Erreur ${res.status}`
+
+    throw new Error(msg)
   }
+
   return data
 }
 
-// ---------- Endpoints ----------
+// ============================================================
+//  ENDPOINTS
+// ============================================================
 export const api = {
-  // ----- Auth -----
+  // ---------- AUTH ----------
   register: (payload) =>
-    request(`${AUTH_PREFIX}/register/`, {
+    request('/auth/register/', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: payload,
+      auth: false,
     }),
 
-  login: ({ username, password }) =>
-    request(`${AUTH_PREFIX}/login/`, {
+  login: (payload) =>
+    request('/auth/login/', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: payload,
+      auth: false,
     }),
 
-  me: () => request(`${AUTH_PREFIX}/me/`),
+  me: () => request('/auth/me/'),
 
-  logout: () =>
-    request(`${AUTH_PREFIX}/logout/`, { method: 'POST' }),
+  logout: () => request('/auth/logout/', { method: 'POST' }),
 
-  users: () => request(`${AUTH_PREFIX}/users/`),
+  changePassword: (payload) =>
+    request('/auth/change-password/', {
+      method: 'POST',
+      body: payload,
+    }),
 
-  // ----- Conversations -----
-  createConversation: (payload) => {
-    // Conversation privée (avec un user_id)
-    if (payload.user_id !== undefined) {
-      return request(`${CONVERSATIONS_PREFIX}/private/`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-    }
-    // Conversation de groupe (avec name + member_ids)
-    if (payload.name && payload.member_ids) {
-      return request(`${CONVERSATIONS_PREFIX}/group/`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-    }
-    throw new Error('Payload de conversation invalide')
-  },
+  changeEmail: (payload) =>
+    request('/auth/change-email/', {
+      method: 'POST',
+      body: payload,
+    }),
+
+  // ---------- USERS ----------
+  listUsers: () => request('/auth/users/'),
+
+  // ---------- CONVERSATIONS ----------
+  listConversations: () => request('/conversations/'),
+
+  createConversation: (payload) =>
+    request(
+      payload.member_ids === undefined
+        ? '/conversations/private/'
+        : '/conversations/group/',
+      { method: 'POST', body: payload }
+    ),
+
+  getConversation: (id) => request(`/conversations/${id}/`),
+
+  addMember: (id, userId) =>
+    request(`/conversations/${id}/members/`, {
+      method: 'POST',
+      body: { user_id: userId },
+    }),
+
+  removeMember: (id, userId) =>
+    request(`/conversations/${id}/members/${userId}/`, {
+      method: 'DELETE',
+    }),
+
+  // ---------- MESSAGES ----------
+  listMessages: (convId, page = 1) =>
+    request(`/conversations/${convId}/messages/?page=${page}`),
+
+  sendMessage: (convId, content) =>
+    request(`/conversations/${convId}/messages/`, {
+      method: 'POST',
+      body: { content },
+    }),
+
+  editMessage: (convId, msgId, content) =>
+    request(`/conversations/${convId}/messages/${msgId}/`, {
+      method: 'PATCH',
+      body: { content },
+    }),
+
+  deleteMessage: (convId, msgId) =>
+    request(`/conversations/${convId}/messages/${msgId}/`, {
+      method: 'DELETE',
+    }),
 }
