@@ -117,13 +117,19 @@ export const api = {
   // ---------- CONVERSATIONS ----------
   listConversations: () => request('/conversations/'),
 
-  createConversation: (payload) =>
-    request(
+  // ✅ Validation synchrone + routage privée/groupe
+  createConversation: (payload) => {
+    if (!payload.user_id && !payload.member_ids) {
+      throw new Error('Payload de conversation invalide')
+    }
+
+    return request(
       payload.member_ids === undefined
         ? '/conversations/private/'
         : '/conversations/group/',
       { method: 'POST', body: payload }
-    ),
+    )
+  },
 
   getConversation: (id) => request(`/conversations/${id}/`),
 
