@@ -9,7 +9,11 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'created_at')
+        fields = (
+            'id', 'username', 'email',
+            'first_name', 'last_name',
+            'date_joined', 'last_login',
+        )
         read_only_fields = fields
 
 
@@ -28,16 +32,26 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = ('username', 'email', 'password', 'password_confirm')
 
+    def validate_username(self, value):
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError(
+                "Ce nom d'utilisateur est déjà pris."
+            )
+        return value
+
     def validate_email(self, value):
         if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError('A user with this email already exists.')
+            raise serializers.ValidationError(
+                "Un compte avec cet email existe déjà."
+            )
         return value
 
     def validate(self, attrs):
-        if attrs['password'] != attrs['password_confirm']:
+        if attrs.get('password') != attrs.get('password_confirm'):
             raise serializers.ValidationError(
-                {'password_confirm': 'Passwords do not match.'}
+                {'password_confirm': 'Les mots de passe ne correspondent pas.'}
             )
+        # Valide le mot de passe avec les règles Django
         validate_password(attrs['password'])
         return attrs
 

@@ -1,9 +1,11 @@
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth import get_user_model
 
-from .models import User
+User = get_user_model()
 
 
 @admin.register(User)
-class CustomUserAdmin(UserAdmin):
-    readonly_fields = ('created_at',)
+class UserAdmin(BaseUserAdmin):
+    list_display = ('id', 'username', 'email', 'is_staff', 'date_joined')
+    search_fields = ('username', 'email')
