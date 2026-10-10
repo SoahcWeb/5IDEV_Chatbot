@@ -60,6 +60,16 @@ export function AuthProvider({ children }) {
     return me
   }, [])
 
+  const refreshUser = useCallback(async () => {
+    if (!getToken()) {
+      setUser(null)
+      return null
+    }
+    const me = await api.me()
+    setUser(me)
+    return me
+  }, [])
+
   // ---------- Déconnexion ----------
   const logout = useCallback(async () => {
     try {
@@ -72,7 +82,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

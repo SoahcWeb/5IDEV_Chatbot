@@ -5,7 +5,13 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .serializers import RegisterSerializer, UserListSerializer, UserSerializer
+from .serializers import (
+    ChangeEmailSerializer,
+    ChangePasswordSerializer,
+    RegisterSerializer,
+    UserListSerializer,
+    UserSerializer,
+)
 
 
 User = get_user_model()
@@ -93,6 +99,28 @@ class CurrentUserView(APIView):
                 setattr(user, field, request.data[field])
         user.save()
         return Response(UserSerializer(user).data)
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'detail': 'Password updated successfully.'})
+
+
+class ChangeEmailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangeEmailSerializer(
+            data=request.data,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'detail': 'Email updated successfully.'})
 
 
 # ============================================================

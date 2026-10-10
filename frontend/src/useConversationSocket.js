@@ -5,7 +5,7 @@ import { connectConversation } from "./websocket";
 export function useConversationSocket({
   conversationId,
   token,
-  baseUrl = "ws://localhost:8000",
+  baseUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000",
   enabled = true,
   onRead,
   onReconnect,

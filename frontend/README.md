@@ -2,8 +2,9 @@
 
 ## Environment variables
 
-Create a `.env.local` file when the local API or WebSocket server is not using
-the default URLs:
+In development, REST API requests use Vite's `/api` proxy to
+`http://127.0.0.1:8000` by default. Create a `.env.local` file to override the
+API URL or when the WebSocket server is not using its default URL:
 
 ```env
 VITE_API_URL=http://localhost:8000/api
