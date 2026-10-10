@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -83,6 +83,54 @@ describe("real-time recovery", () => {
 
     expect(mocks.api.listMessages).toHaveBeenCalledTimes(2);
     expect(mocks.api.listMessages).toHaveBeenLastCalledWith(42);
+  });
+
+  it("shows group members and lets the member panel be toggled", async () => {
+    render(
+      <ConversationView
+        conversation={{
+          id: 42,
+          type: "group",
+          name: "Projet Alpha",
+          members: [
+            { id: 1, username: "alice", role: "admin" },
+            { id: 2, username: "bob", role: "member" },
+          ],
+        }}
+        onBack={vi.fn()}
+        onRead={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mocks.api.listMessages).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("complementary", { name: "Membres du groupe" }))
+      .toBeTruthy();
+    expect(screen.getByText("alice")).toBeTruthy();
+    expect(screen.getByText("bob")).toBeTruthy();
+
+    const toggle = screen.getByRole("button", { name: "Afficher les membres" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("does not show a member panel for a private conversation", async () => {
+    render(
+      <ConversationView
+        conversation={{
+          id: 42,
+          type: "private",
+          members: [{ id: 1, username: "alice", role: "member" }],
+        }}
+        onBack={vi.fn()}
+        onRead={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(mocks.api.listMessages).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Afficher les membres" }))
+      .toBeNull();
   });
 
   it("marks incoming messages as read when the selected conversation is focused", async () => {

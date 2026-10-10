@@ -20,6 +20,7 @@ class MessageAPITests(APITestCase):
         cls.alice = User.objects.create_user('alice', password='TestPassword123!')
         cls.bob = User.objects.create_user('bob', password='TestPassword123!')
         cls.charlie = User.objects.create_user('charlie', password='TestPassword123!')
+        cls.diana = User.objects.create_user('diana', password='TestPassword123!')
 
     def setUp(self):
         self.conversation = Conversation.objects.create(
@@ -30,6 +31,23 @@ class MessageAPITests(APITestCase):
             ConversationMember(conversation=self.conversation, user=self.alice),
             ConversationMember(conversation=self.conversation, user=self.bob),
         ])
+
+    def create_group(self):
+        conversation = Conversation.objects.create(
+            type=Conversation.Type.GROUP,
+            name='Project',
+            created_by=self.alice,
+        )
+        ConversationMember.objects.bulk_create([
+            ConversationMember(
+                conversation=conversation,
+                user=self.alice,
+                role=ConversationMember.Role.ADMIN,
+            ),
+            ConversationMember(conversation=conversation, user=self.bob),
+            ConversationMember(conversation=conversation, user=self.charlie),
+        ])
+        return conversation
 
     def authenticate(self, user):
         token, _ = Token.objects.get_or_create(user=user)
@@ -84,11 +102,39 @@ class MessageAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['results'][0]['id'], message.id)
 
+    def test_group_members_can_send_and_list_messages(self):
+        conversation = self.create_group()
+        self.authenticate(self.charlie)
+
+        sent = self.client.post(
+            self.list_url(conversation),
+            {'content': 'Hello, team'},
+        )
+
+        self.assertEqual(sent.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(sent.data['author'], self.charlie.id)
+        self.authenticate(self.bob)
+
+        listed = self.client.get(self.list_url(conversation))
+
+        self.assertEqual(listed.status_code, status.HTTP_200_OK)
+        self.assertEqual(listed.data['results'][0]['id'], sent.data['id'])
+        self.assertEqual(listed.data['results'][0]['content'], 'Hello, team')
+
     def test_non_member_cannot_list_messages(self):
         self.create_message()
         self.authenticate(self.charlie)
 
         response = self.client.get(self.list_url())
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_member_cannot_list_group_messages(self):
+        conversation = self.create_group()
+        self.create_message(conversation=conversation)
+        self.authenticate(self.diana)
+
+        response = self.client.get(self.list_url(conversation))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
