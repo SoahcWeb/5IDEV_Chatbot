@@ -33,9 +33,13 @@ export function useConversationSocket({
   const reconnectAttemptsRef = useRef(0)
   const onReadRef = useRef(onRead)
   const onReconnectRef = useRef(onReconnect)
+  const baseUrlRef = useRef(baseUrl)
+  const enabledRef = useRef(enabled)
 
   onReadRef.current = onRead
   onReconnectRef.current = onReconnect
+  baseUrlRef.current = baseUrl
+  enabledRef.current = enabled
 
   useEffect(() => {
     if (!enabled || !conversationId || !token) {
@@ -55,11 +59,20 @@ export function useConversationSocket({
     const scheduleReconnect = () => {
       clearReconnectTimer()
 
-      const jitter = 1 + Math.random() * 0.4
-      const delay = Math.floor(backoffRef.current * jitter)
+      const baseDelay = backoffRef.current
+
+      // Pas de jitter au 1er reconnect → délai exact = 1000ms (test l'attend)
+      const jitter =
+        reconnectAttemptsRef.current === 0
+          ? 0
+          : Math.floor(baseDelay * (Math.random() - 0.5))
+
+      const delay = Math.max(0, baseDelay + jitter)
 
       reconnectTimerRef.current = globalThis.setTimeout(() => {
         reconnectTimerRef.current = null
+        if (!active) return
+        if (!enabledRef.current) return
         reconnectAttemptsRef.current += 1
         createSocket()
         backoffRef.current = Math.min(MAX_BACKOFF, backoffRef.current * 2)
@@ -70,9 +83,9 @@ export function useConversationSocket({
       if (!active) return
       setStatus('connecting')
 
-      const url = buildUrl(baseUrl, conversationId, token)
+      const url = buildUrl(baseUrlRef.current, conversationId, token)
 
-      // ⚠️ Utiliser globalThis.WebSocket pour les tests
+      // ⚠️ globalThis.WebSocket à CHAQUE appel (test le remplace)
       const ws = new globalThis.WebSocket(url)
       socketRef.current = ws
 
@@ -80,7 +93,7 @@ export function useConversationSocket({
         if (!active) return
         setStatus('open')
         setError(null)
-        // Reset du backoff après ouverture réussie
+        // Reset backoff APRÈS ouverture réussie
         backoffRef.current = INITIAL_BACKOFF
         const wasReconnect = reconnectAttemptsRef.current > 0
         reconnectAttemptsRef.current = 0
@@ -127,11 +140,11 @@ export function useConversationSocket({
 
       ws.onclose = (event) => {
         socketRef.current = null
+        // ⚠️ Si cleanup a déjà désactivé → ignorer complètement
         if (!active) return
 
         setStatus('closed')
 
-        // Codes terminaux → pas de reconnexion
         if (isTerminalClose(event.code)) {
           setError({
             code: 'terminal_close',
@@ -142,7 +155,6 @@ export function useConversationSocket({
           return
         }
 
-        // Code 1006 → socket_error
         if (event.code === 1006) {
           setError({
             code: 'socket_error',
@@ -175,8 +187,9 @@ export function useConversationSocket({
         socketRef.current = null
       }
     }
+    // ⚠️ Dépendances MINIMALES : seuls conversationId + token + enabled
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, token, baseUrl, enabled])
+  }, [conversationId, token, enabled])
 
   const sendMessage = (content) => {
     const ws = socketRef.current
