@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 
+const TERMINAL_CODES = new Set([4401, 4403, 4404])
+const INITIAL_BACKOFF = 1000
+const MAX_BACKOFF = 15000
+
 function buildUrl(baseUrl, conversationId, token) {
   const base = baseUrl || 'ws://localhost:8000'
   const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base
@@ -15,12 +19,12 @@ export function useConversationSocket({
 } = {}) {
   const [status, setStatus] = useState('idle')
   const [messages, setMessages] = useState([])
-  const [events, setEvents] = useState([])   // ← nouveaux événements : deleted / updated
+  const [events, setEvents] = useState([])
   const [error, setError] = useState(null)
 
   const socketRef = useRef(null)
+  const reconnectTimerRef = useRef(null)
   const retryRef = useRef(0)
-  const retryTimerRef = useRef(null)
   const onReadRef = useRef(onRead)
   const onReconnectRef = useRef(onReconnect)
   const wasOpenRef = useRef(false)
@@ -35,6 +39,13 @@ export function useConversationSocket({
     }
 
     let active = true
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+    }
 
     const connect = () => {
       if (!active) return
@@ -92,32 +103,69 @@ export function useConversationSocket({
       }
 
       ws.onclose = (event) => {
+        socketRef.current = null
         if (!active) return
+
+        // ⚠️ 1. Codes terminaux → pas de reconnexion
+        if (TERMINAL_CODES.has(event.code)) {
+          setStatus('closed')
+          setError({
+            code: 'terminal_close',
+            codeNumber: event.code,
+            message: event.reason || 'Conversation inaccessible',
+          })
+          clearReconnectTimer()
+          return
+        }
+
         setStatus('closed')
-        if (event?.code === 4401) return
+
+        // ⚠️ 2. Code 1006 (fermeture anormale) → error.code = "socket_error"
+        if (event.code === 1006) {
+          setError({
+            code: 'socket_error',
+            message: 'Socket closed unexpectedly.',
+          })
+        } else {
+          setError({
+            code: 'socket_closed',
+            codeNumber: event.code,
+            message: event.reason || 'Connection closed',
+          })
+        }
+
+        // ⚠️ 3. Reconnexion avec backoff, timer stocké
         const delay = Math.min(
-          1000 * 2 ** Math.min(retryRef.current, 5),
-          15000,
+          INITIAL_BACKOFF * 2 ** retryRef.current,
+          MAX_BACKOFF,
         )
         retryRef.current += 1
-        retryTimerRef.current = window.setTimeout(connect, delay)
+        clearReconnectTimer()
+        reconnectTimerRef.current = window.setTimeout(() => {
+          reconnectTimerRef.current = null
+          connect()
+        }, delay)
       }
 
       ws.onerror = () => {
         if (!active) return
-        setError({ type: 'error', detail: 'WebSocket error' })
+        setError({ code: 'socket_error', message: 'WebSocket error' })
       }
     }
 
     connect()
 
+    // ⚠️ 4. Cleanup : clear le timer + ferme le socket
     return () => {
       active = false
-      if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current)
-      socketRef.current?.close()
-      socketRef.current = null
+      clearReconnectTimer()
+      if (socketRef.current) {
+        socketRef.current.close()
+        socketRef.current = null
+      }
       wasOpenRef.current = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, token, baseUrl])
 
   const sendMessage = (content) => {
@@ -137,7 +185,7 @@ export function useConversationSocket({
   return {
     status,
     messages,
-    events,   // ← NOUVEAU
+    events,
     error,
     sendMessage,
     markConversationRead,

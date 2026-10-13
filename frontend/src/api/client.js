@@ -76,6 +76,50 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   return data;
 }
 
+// ---------- Helper générique (attendu par les tests) ----------
+function createConversation(payload) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Payload de conversation invalide");
+  }
+
+  // Cas type explicite : { type: "private", user_id }
+  if (payload.type === "private" && payload.user_id) {
+    return request("/conversations/private/", {
+      method: "POST",
+      body: { user_id: payload.user_id },
+    });
+  }
+
+  // Cas type explicite : { type: "group", name, member_ids }
+  if (
+    payload.type === "group" &&
+    payload.name &&
+    Array.isArray(payload.member_ids)
+  ) {
+    return request("/conversations/group/", {
+      method: "POST",
+      body: { name: payload.name, member_ids: payload.member_ids },
+    });
+  }
+
+  // Rétrocompat : payload sans "type" → on déduit
+  if (payload.user_id && !payload.member_ids) {
+    return request("/conversations/private/", {
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  if (payload.member_ids) {
+    return request("/conversations/group/", {
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  throw new Error("Payload de conversation invalide");
+}
+
 // ============================================================
 //  ENDPOINTS
 // ============================================================
@@ -115,6 +159,9 @@ export const api = {
   listConversations: () => request("/conversations/"),
 
   getConversation: (id) => request(`/conversations/${id}/`),
+
+  // ⚠️ Méthode générique attendue par les tests CI
+  createConversation,
 
   createPrivateConversation: (userId) =>
     request("/conversations/private/", {
