@@ -33,7 +33,6 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     }
   }, [conversation.id])
 
-  // Reset + reload UNIQUEMENT au changement de conversation
   useEffect(() => {
     deletedIdsRef.current = new Set()
     setMembersOpen(false)
@@ -84,7 +83,6 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   // Traitement des événements WS (deleted / updated)
   useEffect(() => {
     if (!socketEvents || socketEvents.length === 0) return
-
     socketEvents.forEach((ev) => {
       if (ev.type === 'deleted') {
         deletedIdsRef.current.add(ev.messageId)
@@ -99,7 +97,31 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     })
   }, [socketEvents])
 
-  // Marquage "lu" quand on reçoit des messages
+  // ---------- Marquage "lu" (focus window) ----------
+  useEffect(() => {
+    if (socketStatus !== 'open') return undefined
+
+    const handleFocus = () => {
+      if (
+        document.hasFocus() &&
+        document.visibilityState === 'visible'
+      ) {
+        markConversationRead?.()
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+    window.addEventListener('blur', handleFocus)
+    document.addEventListener('visibilitychange', handleFocus)
+
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('blur', handleFocus)
+      document.removeEventListener('visibilitychange', handleFocus)
+    }
+  }, [markConversationRead, socketStatus])
+
+  // Marquage "lu" quand on reçoit un message
   useEffect(() => {
     if (
       socketMessages.length === 0 ||
@@ -108,17 +130,6 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     ) return
     markConversationRead?.()
   }, [markConversationRead, socketMessages])
-
-  // Marquage "lu" à l'ouverture de la conv
-  useEffect(() => {
-    if (
-      socketStatus === 'open' &&
-      document.hasFocus() &&
-      document.visibilityState === 'visible'
-    ) {
-      markConversationRead?.()
-    }
-  }, [markConversationRead, socketStatus])
 
   // Erreur WebSocket
   useEffect(() => {

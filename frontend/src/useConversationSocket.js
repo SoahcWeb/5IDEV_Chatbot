@@ -10,12 +10,17 @@ function buildUrl(baseUrl, conversationId, token) {
   return `${cleanBase}/ws/conversations/${conversationId}/?token=${token}`
 }
 
+function isTerminalClose(code) {
+  return TERMINAL_CODES.has(code)
+}
+
 export function useConversationSocket({
   conversationId,
   token,
   baseUrl,
   onRead,
   onReconnect,
+  enabled = true,
 } = {}) {
   const [status, setStatus] = useState('idle')
   const [messages, setMessages] = useState([])
@@ -24,16 +29,16 @@ export function useConversationSocket({
 
   const socketRef = useRef(null)
   const reconnectTimerRef = useRef(null)
-  const retryRef = useRef(0)
+  const backoffRef = useRef(INITIAL_BACKOFF)
+  const reconnectAttemptsRef = useRef(0)
   const onReadRef = useRef(onRead)
   const onReconnectRef = useRef(onReconnect)
-  const wasOpenRef = useRef(false)
 
   onReadRef.current = onRead
   onReconnectRef.current = onReconnect
 
   useEffect(() => {
-    if (!conversationId || !token) {
+    if (!enabled || !conversationId || !token) {
       setStatus('idle')
       return undefined
     }
@@ -42,26 +47,44 @@ export function useConversationSocket({
 
     const clearReconnectTimer = () => {
       if (reconnectTimerRef.current !== null) {
-        window.clearTimeout(reconnectTimerRef.current)
+        globalThis.clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
       }
     }
 
-    const connect = () => {
+    const scheduleReconnect = () => {
+      clearReconnectTimer()
+
+      const jitter = 1 + Math.random() * 0.4
+      const delay = Math.floor(backoffRef.current * jitter)
+
+      reconnectTimerRef.current = globalThis.setTimeout(() => {
+        reconnectTimerRef.current = null
+        reconnectAttemptsRef.current += 1
+        createSocket()
+        backoffRef.current = Math.min(MAX_BACKOFF, backoffRef.current * 2)
+      }, delay)
+    }
+
+    const createSocket = () => {
       if (!active) return
       setStatus('connecting')
 
       const url = buildUrl(baseUrl, conversationId, token)
-      const ws = new WebSocket(url)
+
+      // ⚠️ Utiliser globalThis.WebSocket pour les tests
+      const ws = new globalThis.WebSocket(url)
       socketRef.current = ws
 
       ws.onopen = () => {
         if (!active) return
         setStatus('open')
         setError(null)
-        retryRef.current = 0
-        if (wasOpenRef.current) onReconnectRef.current?.()
-        wasOpenRef.current = true
+        // Reset du backoff après ouverture réussie
+        backoffRef.current = INITIAL_BACKOFF
+        const wasReconnect = reconnectAttemptsRef.current > 0
+        reconnectAttemptsRef.current = 0
+        if (wasReconnect) onReconnectRef.current?.()
       }
 
       ws.onmessage = (e) => {
@@ -106,9 +129,10 @@ export function useConversationSocket({
         socketRef.current = null
         if (!active) return
 
-        // ⚠️ 1. Codes terminaux → pas de reconnexion
-        if (TERMINAL_CODES.has(event.code)) {
-          setStatus('closed')
+        setStatus('closed')
+
+        // Codes terminaux → pas de reconnexion
+        if (isTerminalClose(event.code)) {
           setError({
             code: 'terminal_close',
             codeNumber: event.code,
@@ -118,9 +142,7 @@ export function useConversationSocket({
           return
         }
 
-        setStatus('closed')
-
-        // ⚠️ 2. Code 1006 (fermeture anormale) → error.code = "socket_error"
+        // Code 1006 → socket_error
         if (event.code === 1006) {
           setError({
             code: 'socket_error',
@@ -134,17 +156,7 @@ export function useConversationSocket({
           })
         }
 
-        // ⚠️ 3. Reconnexion avec backoff, timer stocké
-        const delay = Math.min(
-          INITIAL_BACKOFF * 2 ** retryRef.current,
-          MAX_BACKOFF,
-        )
-        retryRef.current += 1
-        clearReconnectTimer()
-        reconnectTimerRef.current = window.setTimeout(() => {
-          reconnectTimerRef.current = null
-          connect()
-        }, delay)
+        scheduleReconnect()
       }
 
       ws.onerror = () => {
@@ -153,9 +165,8 @@ export function useConversationSocket({
       }
     }
 
-    connect()
+    createSocket()
 
-    // ⚠️ 4. Cleanup : clear le timer + ferme le socket
     return () => {
       active = false
       clearReconnectTimer()
@@ -163,21 +174,20 @@ export function useConversationSocket({
         socketRef.current.close()
         socketRef.current = null
       }
-      wasOpenRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, token, baseUrl])
+  }, [conversationId, token, baseUrl, enabled])
 
   const sendMessage = (content) => {
     const ws = socketRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false
+    if (!ws || ws.readyState !== 1) return false
     ws.send(JSON.stringify({ type: 'message.send', content }))
     return true
   }
 
   const markConversationRead = () => {
     const ws = socketRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false
+    if (!ws || ws.readyState !== 1) return false
     ws.send(JSON.stringify({ type: 'conversation.read' }))
     return true
   }

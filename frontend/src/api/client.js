@@ -76,13 +76,15 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   return data;
 }
 
-// ---------- Helper générique (attendu par les tests) ----------
+// ============================================================
+//  HELPER — createConversation générique (attendu par les tests)
+// ============================================================
 function createConversation(payload) {
   if (!payload || typeof payload !== "object") {
     throw new Error("Payload de conversation invalide");
   }
 
-  // Cas type explicite : { type: "private", user_id }
+  // Cas 1 : type explicite "private"
   if (payload.type === "private" && payload.user_id) {
     return request("/conversations/private/", {
       method: "POST",
@@ -90,7 +92,7 @@ function createConversation(payload) {
     });
   }
 
-  // Cas type explicite : { type: "group", name, member_ids }
+  // Cas 2 : type explicite "group"
   if (
     payload.type === "group" &&
     payload.name &&
@@ -102,18 +104,22 @@ function createConversation(payload) {
     });
   }
 
-  // Rétrocompat : payload sans "type" → on déduit
+  // Cas 3 : rétrocompat — payload.user_id sans type
   if (payload.user_id && !payload.member_ids) {
     return request("/conversations/private/", {
       method: "POST",
-      body: payload,
+      body: { user_id: payload.user_id },
     });
   }
 
-  if (payload.member_ids) {
+  // Cas 4 : rétrocompat — payload.member_ids sans type
+  if (Array.isArray(payload.member_ids)) {
     return request("/conversations/group/", {
       method: "POST",
-      body: payload,
+      body: {
+        name: payload.name ?? "",
+        member_ids: payload.member_ids,
+      },
     });
   }
 
@@ -160,7 +166,6 @@ export const api = {
 
   getConversation: (id) => request(`/conversations/${id}/`),
 
-  // ⚠️ Méthode générique attendue par les tests CI
   createConversation,
 
   createPrivateConversation: (userId) =>
