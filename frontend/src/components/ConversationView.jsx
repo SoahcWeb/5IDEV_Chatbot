@@ -15,7 +15,6 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   const [allUsers, setAllUsers] = useState([])
   const [membersLocal, setMembersLocal] = useState(conversation.members ?? [])
 
-  // 🔒 Set des IDs supprimés localement (pour filtrer les retours WS)
   const deletedIdsRef = useRef(new Set())
 
   // ---------- Récupération des messages (REST) ----------
@@ -61,7 +60,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     onReconnect: reload,
   })
 
-  // ---------- Fusion des messages WS (filtrée) ----------
+  // Fusion des messages WS (filtrée par conv + supprimés)
   useEffect(() => {
     if (socketMessages.length === 0) return
     setMessages((current) => {
@@ -82,7 +81,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     })
   }, [socketMessages, conversation.id])
 
-  // ---------- Traitement des événements WS (deleted / updated) ----------
+  // Traitement des événements WS (deleted / updated)
   useEffect(() => {
     if (!socketEvents || socketEvents.length === 0) return
 
@@ -100,7 +99,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     })
   }, [socketEvents])
 
-  // ---------- Marquage "lu" ----------
+  // Marquage "lu" quand on reçoit des messages
   useEffect(() => {
     if (
       socketMessages.length === 0 ||
@@ -110,6 +109,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     markConversationRead?.()
   }, [markConversationRead, socketMessages])
 
+  // Marquage "lu" à l'ouverture de la conv
   useEffect(() => {
     if (
       socketStatus === 'open' &&
@@ -120,15 +120,10 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     }
   }, [markConversationRead, socketStatus])
 
+  // Erreur WebSocket
   useEffect(() => {
     if (socketError) setError(socketError.detail || 'Erreur WebSocket')
   }, [socketError])
-
-  useEffect(() => {
-    if (typeof api?.markRead !== 'function') return
-    const p = api.markRead(conversation.id)
-    if (p && typeof p.catch === 'function') p.catch(() => {})
-  }, [conversation.id])
 
   // ---------- Envoi ----------
   const handleSend = async (content) => {
@@ -164,7 +159,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     }
   }
 
-  // ---------- Suppression (retrait optimiste + track) ----------
+  // ---------- Suppression (retrait optimiste) ----------
   const handleDelete = async (msgId) => {
     deletedIdsRef.current.add(msgId)
     setMessages((prev) => prev.filter((m) => m.id !== msgId))

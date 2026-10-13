@@ -67,8 +67,6 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
       (data && Object.values(data).flat().join(" ")) ||
       `Erreur ${res.status}`;
 
-    // ⚠️ On expose le status HTTP pour que ConversationView
-    // puisse détecter les 404 (messages fantômes).
     const error = new Error(msg);
     error.status = res.status;
     error.data = data;
@@ -118,26 +116,6 @@ export const api = {
 
   getConversation: (id) => request(`/conversations/${id}/`),
 
-  createConversation: (payload) => {
-    if (
-      !payload ||
-      typeof payload !== "object" ||
-      (!payload.name && !payload.member_ids && !payload.user_id)
-    ) {
-      throw new Error("Payload de conversation invalide");
-    }
-    if (payload.user_id && !payload.member_ids) {
-      return request("/conversations/private/", {
-        method: "POST",
-        body: payload,
-      });
-    }
-    return request("/conversations/group/", {
-      method: "POST",
-      body: payload,
-    });
-  },
-
   createPrivateConversation: (userId) =>
     request("/conversations/private/", {
       method: "POST",
@@ -157,7 +135,9 @@ export const api = {
     }),
 
   removeMember: (id, userId) =>
-    request(`/conversations/${id}/members/${userId}/`, { method: "DELETE" }),
+    request(`/conversations/${id}/members/${userId}/`, {
+      method: "DELETE",
+    }),
 
   markRead: (id) =>
     request(`/conversations/${id}/read/`, { method: "POST" }),
