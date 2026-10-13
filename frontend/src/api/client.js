@@ -1,16 +1,12 @@
 // ============================================================
 //  API CLIENT — Django + DRF authtoken
-//  Header : Authorization: Token xxx
-//  Clé localStorage : "auth_token"
 // ============================================================
 
-const API_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 const TOKEN_KEY = "auth_token";
 const TIMEOUT_MS = 8000;
 
-// ---------- Token ----------
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 
 export const setToken = (t) => {
@@ -77,52 +73,33 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
 }
 
 // ============================================================
-//  HELPER — createConversation générique (attendu par les tests)
+//  HELPER — createConversation générique
 // ============================================================
 function createConversation(payload) {
   if (!payload || typeof payload !== "object") {
     throw new Error("Payload de conversation invalide");
   }
 
-  // Cas 1 : type explicite "private"
-  if (payload.type === "private" && payload.user_id) {
-    return request("/conversations/private/", {
-      method: "POST",
-      body: { user_id: payload.user_id },
-    });
-  }
-
-  // Cas 2 : type explicite "group"
-  if (
-    payload.type === "group" &&
-    payload.name &&
-    Array.isArray(payload.member_ids)
-  ) {
-    return request("/conversations/group/", {
-      method: "POST",
-      body: { name: payload.name, member_ids: payload.member_ids },
-    });
-  }
-
-  // Cas 3 : rétrocompat — payload.user_id sans type
-  if (payload.user_id && !payload.member_ids) {
-    return request("/conversations/private/", {
-      method: "POST",
-      body: { user_id: payload.user_id },
-    });
-  }
-
-  // Cas 4 : rétrocompat — payload.member_ids sans type
+  // Cas 1 : payload groupe (member_ids présent)
   if (Array.isArray(payload.member_ids)) {
     return request("/conversations/group/", {
       method: "POST",
       body: {
-        name: payload.name ?? "",
+        name: payload.name,
         member_ids: payload.member_ids,
       },
     });
   }
 
+  // Cas 2 : payload privé (user_id présent)
+  if (payload.user_id) {
+    return request("/conversations/private/", {
+      method: "POST",
+      body: { user_id: payload.user_id },
+    });
+  }
+
+  // Cas 3 : payload vide → erreur
   throw new Error("Payload de conversation invalide");
 }
 
@@ -130,42 +107,26 @@ function createConversation(payload) {
 //  ENDPOINTS
 // ============================================================
 export const api = {
-  // ---------- AUTH ----------
+  // AUTH
   register: (payload) =>
-    request("/auth/register/", {
-      method: "POST",
-      body: payload,
-      auth: false,
-    }),
-
+    request("/auth/register/", { method: "POST", body: payload, auth: false }),
   login: (payload) =>
-    request("/auth/login/", {
-      method: "POST",
-      body: payload,
-      auth: false,
-    }),
-
+    request("/auth/login/", { method: "POST", body: payload, auth: false }),
   me: () => request("/auth/me/"),
-
   logout: () => request("/auth/logout/", { method: "POST" }),
-
   changePassword: (payload) =>
     request("/auth/change-password/", { method: "POST", body: payload }),
-
   changeEmail: (payload) =>
     request("/auth/change-email/", { method: "POST", body: payload }),
-
   deleteAccount: () =>
     request("/auth/delete-account/", { method: "DELETE" }),
 
-  // ---------- USERS ----------
+  // USERS
   listUsers: () => request("/auth/users/"),
 
-  // ---------- CONVERSATIONS ----------
+  // CONVERSATIONS
   listConversations: () => request("/conversations/"),
-
   getConversation: (id) => request(`/conversations/${id}/`),
-
   createConversation,
 
   createPrivateConversation: (userId) =>
@@ -194,22 +155,19 @@ export const api = {
   markRead: (id) =>
     request(`/conversations/${id}/read/`, { method: "POST" }),
 
-  // ---------- MESSAGES ----------
+  // MESSAGES
   listMessages: (convId, page = 1) =>
     request(`/conversations/${convId}/messages/?page=${page}`),
-
   sendMessage: (convId, content) =>
     request(`/conversations/${convId}/messages/`, {
       method: "POST",
       body: { content },
     }),
-
   editMessage: (msgId, content) =>
     request(`/messages/${msgId}/`, {
       method: "PATCH",
       body: { content },
     }),
-
   deleteMessage: (msgId) =>
     request(`/messages/${msgId}/`, { method: "DELETE" }),
 };
