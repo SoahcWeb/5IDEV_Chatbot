@@ -1,4 +1,5 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
 :root {
   --bg: #0f172a;
   --panel: #1e293b;
@@ -8,16 +9,21 @@
   --accent: #6366f1;
   --accent-hover: #4f46e5;
   --danger: #ef4444;
+  --danger-hover: #dc2626;
   --ok: #22c55e;
 }
+
 html, body, #root { height: 100%; }
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
 }
+
 a { color: var(--accent); text-decoration: none; }
 button { cursor: pointer; font: inherit; }
+
 input, textarea {
   font: inherit;
   background: var(--panel-2);
@@ -29,6 +35,8 @@ input, textarea {
   width: 100%;
 }
 input:focus, textarea:focus { border-color: var(--accent); }
+
+/* ===== Boutons ===== */
 .btn {
   background: var(--accent);
   color: white;
@@ -39,15 +47,36 @@ input:focus, textarea:focus { border-color: var(--accent); }
 }
 .btn:hover { background: var(--accent-hover); }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .btn-ghost {
   background: transparent;
   color: var(--text);
   border: 1px solid #475569;
 }
 .btn-ghost:hover { background: var(--panel-2); }
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 600;
+}
+.btn-danger:hover { background: var(--danger-hover); }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ===== Messages d'état ===== */
 .error {
-  background: rgba(239,68,68,0.15);
+  background: rgba(239, 68, 68, 0.15);
   color: #fca5a5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 13px;
@@ -68,6 +97,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
 }
 .landing-nav .logo { font-weight: 800; font-size: 20px; }
 .landing-nav .actions { display: flex; gap: 12px; }
+
 .hero {
   flex: 1;
   display: grid;
@@ -87,6 +117,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   font-size: 18px;
 }
 .hero .cta { display: flex; gap: 12px; justify-content: center; }
+
 .pricing {
   padding: 80px 24px;
   max-width: 1100px;
@@ -114,6 +145,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .plan .price span { font-size: 14px; color: var(--muted); font-weight: 400; }
 .plan ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .plan li::before { content: "✓ "; color: var(--ok); }
+
 .landing-footer {
   padding: 24px;
   text-align: center;
@@ -142,6 +174,53 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .auth-card h1 { font-size: 22px; margin-bottom: 8px; }
 .auth-card .link { color: var(--muted); font-size: 13px; text-align: center; }
 
+/* ===== Profil ===== */
+.profile-card {
+  max-width: 520px;
+}
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.profile-info {
+  background: #263449;
+  border-radius: 10px;
+  padding: 14px;
+}
+.profile-info-label {
+  color: #94a3b8;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.profile-info-username {
+  font-size: 22px;
+  font-weight: 700;
+}
+.profile-info-email {
+  color: #cbd5e1;
+  font-size: 14px;
+  margin-top: 2px;
+}
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #334155;
+}
+.profile-form h2 {
+  font-size: 16px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.profile-danger-zone {
+  border-top: 1px solid rgba(239, 68, 68, 0.3);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
 /* ===== Chat ===== */
 .chat-layout {
   display: grid;
@@ -154,6 +233,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   .chat-layout.show-list .sidebar { display: flex; }
   .chat-layout.show-list .main { display: none; }
 }
+
 .sidebar {
   background: var(--panel);
   border-right: 1px solid #334155;
@@ -170,6 +250,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
 }
 .sidebar-user { font-size: 13px; color: var(--muted); }
 .sidebar-user strong { color: var(--text); display: block; }
+
 .notification-opt-in {
   margin: 12px 16px 0;
   padding: 8px 10px;
@@ -181,6 +262,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   font-size: 12px;
 }
 .notification-opt-in:hover { background: var(--panel-2); }
+
 .conv-list { flex: 1; overflow-y: auto; }
 .conv-item {
   padding: 12px 16px;
@@ -195,6 +277,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
 .conv-item.active { background: #3b4a63; }
 .conv-item .name { font-weight: 600; font-size: 14px; }
 .conv-item .preview { font-size: 12px; color: var(--muted); }
+
 .badge {
   background: var(--accent);
   color: white;
@@ -205,7 +288,9 @@ input:focus, textarea:focus { border-color: var(--accent); }
   min-width: 22px;
   text-align: center;
 }
+
 .main { display: flex; flex-direction: column; min-height: 0; }
+
 .chat-header {
   padding: 14px 20px;
   border-bottom: 1px solid #334155;
@@ -220,9 +305,17 @@ input:focus, textarea:focus { border-color: var(--accent); }
 @media (max-width: 720px) {
   .chat-header .back { display: inline-block; }
 }
+
 .member-toggle { display: none; margin-left: auto; }
 .conversation-content { display: flex; flex: 1; min-height: 0; }
-.conversation-thread { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.conversation-thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 .group-members {
   flex: 0 0 240px;
   overflow-y: auto;
@@ -239,6 +332,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   color: var(--text);
   font-size: 14px;
 }
+
 @media (max-width: 1024px) {
   .member-toggle { display: inline-flex; }
   .conversation-content { position: relative; }
@@ -253,6 +347,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   }
   .group-members.is-open { display: block; }
 }
+
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -278,12 +373,21 @@ input:focus, textarea:focus { border-color: var(--accent); }
   gap: 6px;
   align-items: center;
 }
-.msg .actions { margin-top: 6px; font-size: 11px; display: flex; gap: 8px; }
+.msg .actions {
+  margin-top: 6px;
+  font-size: 11px;
+  display: flex;
+  gap: 8px;
+}
 .msg .actions button {
-  background: none; border: none; color: inherit; text-decoration: underline;
+  background: none;
+  border: none;
+  color: inherit;
+  text-decoration: underline;
   opacity: 0.85;
 }
 .msg .edited { font-style: italic; opacity: 0.7; }
+
 .msg-input {
   display: flex;
   gap: 10px;
@@ -297,6 +401,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   min-height: 42px;
   max-height: 140px;
 }
+
 .empty {
   flex: 1;
   display: grid;
@@ -305,6 +410,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   text-align: center;
   padding: 24px;
 }
+
 .notification-toast {
   position: fixed;
   right: 20px;
@@ -319,7 +425,7 @@ input:focus, textarea:focus { border-color: var(--accent); }
   border-radius: 10px;
   background: var(--panel);
   color: var(--text);
-  box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
   text-align: left;
 }
 .notification-toast span {
@@ -329,9 +435,16 @@ input:focus, textarea:focus { border-color: var(--accent); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ===== Modales ===== */
 .modal-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-  display: grid; place-items: center; padding: 16px; z-index: 50;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 50;
 }
 .modal {
   background: var(--panel);
@@ -345,8 +458,11 @@ input:focus, textarea:focus { border-color: var(--accent); }
 }
 .modal h2 { font-size: 18px; }
 .member-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px; border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
 }
 .member-row:hover { background: var(--panel-2); }
 .member-row input { width: auto; }

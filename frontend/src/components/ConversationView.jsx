@@ -1,17 +1,25 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api, getToken } from '../api/client.js'
 import { useConversationSocket } from '../useConversationSocket.js'
+import { useAuth } from '../context/AuthContext.jsx'
 import MessageList from './MessageList.jsx'
 import MessageInput from './MessageInput.jsx'
 
 export default function ConversationView({ conversation, onBack, onRead }) {
+  const { user } = useAuth()
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [membersOpen, setMembersOpen] = useState(false)
+  const [addMemberOpen, setAddMemberOpen] = useState(false)
+  const [allUsers, setAllUsers] = useState([])
+  const [membersLocal, setMembersLocal] = useState(conversation.members ?? [])
 
+  // ---------- Récupération des messages (REST) ----------
   const reload = useCallback(async () => {
     setLoading(true)
+    setMessages([])             // ⚠️ Vide AVANT le fetch (évite le mélange visuel)
+    setError('')
     try {
       const data = await api.listMessages(conversation.id)
       const list = Array.isArray(data) ? data : data.results ?? []
@@ -23,14 +31,16 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     }
   }, [conversation.id])
 
-  useEffect(() => {
-    reload()
-  }, [reload])
-
+  // Reset global + reload quand on change de conversation
   useEffect(() => {
     setMembersOpen(false)
-  }, [conversation.id])
+    setAddMemberOpen(false)
+    setMembersLocal(conversation.members ?? [])
+    setError('')
+    reload()
+  }, [conversation.id, reload])
 
+  // ---------- WebSocket ----------
   const {
     status: socketStatus,
     messages: socketMessages,
@@ -45,29 +55,29 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     onReconnect: reload,
   })
 
+  // ---------- Fusion des messages WS (FILTRÉE par conversation) ----------
   useEffect(() => {
     if (socketMessages.length === 0) return
 
     setMessages((current) => {
-      const incomingById = new Map(
-        socketMessages.map((message) => [message.id, message])
+      // 🔒 Filtre strict : on ne garde QUE les messages de cette conversation
+      const fromThisConv = socketMessages.filter(
+        (m) => Number(m.conversation) === Number(conversation.id),
       )
-      const merged = current.map((message) =>
-        incomingById.has(message.id)
-          ? { ...message, ...incomingById.get(message.id) }
-          : message
-      )
-      const currentIds = new Set(current.map((message) => message.id))
-      const newMessages = socketMessages.filter(
-        (message) => !currentIds.has(message.id)
-      )
+      if (fromThisConv.length === 0) return current
 
-      return newMessages.length > 0
-        ? [...merged, ...newMessages]
-        : merged
+      const incomingById = new Map(fromThisConv.map((m) => [m.id, m]))
+      const merged = current.map((m) =>
+        incomingById.has(m.id) ? { ...m, ...incomingById.get(m.id) } : m,
+      )
+      const currentIds = new Set(current.map((m) => m.id))
+      const newMessages = fromThisConv.filter((m) => !currentIds.has(m.id))
+
+      return newMessages.length > 0 ? [...merged, ...newMessages] : merged
     })
-  }, [socketMessages])
+  }, [socketMessages, conversation.id])   // ← dépendance conversation.id
 
+  // ---------- Marquage "lu" ----------
   useEffect(() => {
     if (
       socketMessages.length === 0 ||
@@ -90,17 +100,14 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   useEffect(() => {
     if (socketStatus !== 'open') return undefined
 
-    let wasFocused =
-      document.hasFocus() && document.visibilityState === 'visible'
+    let wasFocused = document.hasFocus() && document.visibilityState === 'visible'
     const markReadWhenFocused = () => {
-      const isFocused =
-        document.hasFocus() && document.visibilityState === 'visible'
+      const isFocused = document.hasFocus() && document.visibilityState === 'visible'
       if (!isFocused) {
         wasFocused = false
         return
       }
       if (wasFocused) return
-
       wasFocused = true
       markConversationRead()
     }
@@ -119,6 +126,12 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     if (socketError) setError(socketError.detail || 'Erreur WebSocket')
   }, [socketError])
 
+  // Fallback REST : marquer comme lu à l'ouverture
+  useEffect(() => {
+    api.markRead(conversation.id).catch(() => {})
+  }, [conversation.id])
+
+  // ---------- Envoi ----------
   const handleSend = async (content) => {
     try {
       sendMessage(content)
@@ -127,21 +140,59 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     }
   }
 
+  // ---------- Édition (route PLATE) ----------
   const handleEdit = async (msgId, content) => {
     try {
-      const updated = await api.editMessage(conversation.id, msgId, content)
+      const updated = await api.editMessage(msgId, content)
       setMessages((prev) =>
-        prev.map((m) => (m.id === msgId ? { ...m, ...updated } : m))
+        prev.map((m) => (m.id === msgId ? { ...m, ...updated } : m)),
       )
     } catch (e) {
       setError(e.message)
     }
   }
 
+  // ---------- Suppression (route PLATE) ----------
   const handleDelete = async (msgId) => {
     try {
-      await api.deleteMessage(conversation.id, msgId)
+      await api.deleteMessage(msgId)
       setMessages((prev) => prev.filter((m) => m.id !== msgId))
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  // ---------- Membres ----------
+  const isAdmin = membersLocal.find((m) => m.user === user?.id)?.role === 'admin'
+
+  const openAddMember = async () => {
+    setAddMemberOpen(true)
+    try {
+      const data = await api.listUsers()
+      const list = Array.isArray(data) ? data : data.results ?? []
+      const memberIds = new Set(membersLocal.map((m) => m.user))
+      setAllUsers(list.filter((u) => !memberIds.has(u.id)))
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const handleAddMember = async (userId) => {
+    try {
+      await api.addMember(conversation.id, userId)
+      const fresh = await api.getConversation(conversation.id)
+      setMembersLocal(fresh.members ?? [])
+      setAddMemberOpen(false)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const handleRemoveMember = async (userId) => {
+    if (!confirm('Retirer ce membre du groupe ?')) return
+    try {
+      await api.removeMember(conversation.id, userId)
+      setMembersLocal((prev) => prev.filter((m) => m.user !== userId))
     } catch (e) {
       setError(e.message)
     }
@@ -154,14 +205,14 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   return (
     <div className="main">
       <div className="chat-header">
-        <button className="btn btn-ghost back" onClick={onBack}>
+        <button className="btn btn-ghost back" onClick={onBack} aria-label="Retour">
           ←
         </button>
-        <div>
+        <div style={{ flex: 1 }}>
           <div className="title">{title}</div>
           <div className="sub">
-            {conversation.members?.length
-              ? `${conversation.members.length} membre(s)`
+            {isGroup && membersLocal.length > 0
+              ? `${membersLocal.length} membre(s)`
               : ''}
           </div>
         </div>
@@ -178,6 +229,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
           </button>
         )}
       </div>
+
       <div className="conversation-content">
         <section className="conversation-thread" aria-label="Conversation">
           {error && <div className="empty">{error}</div>}
@@ -189,6 +241,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
           />
           <MessageInput onSend={handleSend} />
         </section>
+
         {isGroup && (
           <aside
             id="conversation-members"
@@ -196,14 +249,75 @@ export default function ConversationView({ conversation, onBack, onRead }) {
             aria-labelledby="conversation-members-title"
           >
             <h2 id="conversation-members-title">Membres du groupe</h2>
+
             <ul>
-              {(conversation.members ?? []).map((member) => (
-                <li key={member.id}>{member.username}</li>
+              {membersLocal.map((member) => (
+                <li key={member.id}>
+                  <span>{member.username}</span>
+                  <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--muted)' }}>
+                    {member.role === 'admin' ? '👑' : ''}
+                  </span>
+                  {isAdmin && member.user !== user?.id && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ padding: '2px 6px', fontSize: 11, marginLeft: 8 }}
+                      onClick={() => handleRemoveMember(member.user)}
+                      aria-label={`Retirer ${member.username}`}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </li>
               ))}
             </ul>
+
+            {isAdmin && (
+              <button className="btn" onClick={openAddMember} style={{ marginTop: 8 }}>
+                + Ajouter un membre
+              </button>
+            )}
           </aside>
         )}
       </div>
+
+      {/* ---------- Modale : ajouter un membre ---------- */}
+      {addMemberOpen && (
+        <div className="modal-backdrop" onClick={() => setAddMemberOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Ajouter un membre</h2>
+
+            {allUsers.length === 0 ? (
+              <div className="empty">Aucun utilisateur disponible.</div>
+            ) : (
+              <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                {allUsers.map((u) => (
+                  <button
+                    key={u.id}
+                    className="member-row"
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => handleAddMember(u.id)}
+                  >
+                    {u.username}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <button className="btn btn-ghost" onClick={() => setAddMemberOpen(false)}>
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

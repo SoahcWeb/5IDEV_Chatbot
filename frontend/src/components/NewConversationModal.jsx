@@ -7,29 +7,61 @@ export default function NewConversationModal({ onClose, onCreate }) {
   const [name, setName] = useState('')
   const [isGroup, setIsGroup] = useState(false)
   const [error, setError] = useState('')
+  const [loadingUsers, setLoadingUsers] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    api.listUsers().then(setUsers).catch((e) => setError(e.message))
+    let cancelled = false
+    api
+      .listUsers()
+      .then((data) => {
+        if (cancelled) return
+        const list = Array.isArray(data) ? data : data.results ?? []
+        setUsers(list)
+      })
+      .catch((e) => { if (!cancelled) setError(e.message) })
+      .finally(() => { if (!cancelled) setLoadingUsers(false) })
+    return () => { cancelled = true }
   }, [])
 
   const toggle = (id) => {
     setSelected((current) => {
-      if (current.includes(id)) return current.filter((item) => item !== id)
-      return isGroup ? [...current, id] : [id]
+      if (isGroup) {
+        return current.includes(id)
+          ? current.filter((item) => item !== id)
+          : [...current, id]
+      }
+      return current.includes(id) ? [] : [id]
     })
+  }
+
+  const switchMode = (group) => {
+    setIsGroup(group)
+    setSelected([])
+    setName('')
+    setError('')
   }
 
   const submit = async () => {
     setError('')
-    if (!selected.length) return setError('Sélectionne au moins un utilisateur')
+
+    if (isGroup) {
+      if (!name.trim()) return setError('Donne un nom au groupe.')
+      if (selected.length === 0) return setError('Sélectionne au moins un membre.')
+    } else {
+      if (selected.length !== 1) return setError('Sélectionne exactement un utilisateur.')
+    }
+
+    setSubmitting(true)
     try {
-      const payload = isGroup
-        ? { name, member_ids: selected }
-        : { user_id: selected[0] }
-      const conv = await api.createConversation(payload)
+      const conv = isGroup
+        ? await api.createGroupConversation(name.trim(), selected)
+        : await api.createPrivateConversation(selected[0])
       onCreate(conv)
     } catch (e) {
       setError(e.message)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -37,45 +69,69 @@ export default function NewConversationModal({ onClose, onCreate }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Nouvelle conversation</h2>
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={isGroup}
-            onChange={(event) => {
-              setIsGroup(event.target.checked)
-              if (!event.target.checked) {
-                setSelected((current) => current.slice(0, 1))
-              }
-            }}
-          />
-          Groupe
-        </label>
+
+        <div style={{ display: 'flex', gap: 16 }}>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="radio"
+              name="conversation-type"
+              checked={!isGroup}
+              onChange={() => switchMode(false)}
+            />
+            Privée
+          </label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="radio"
+              name="conversation-type"
+              checked={isGroup}
+              onChange={() => switchMode(true)}
+            />
+            Groupe
+          </label>
+        </div>
+
         {isGroup && (
           <input
             placeholder="Nom du groupe"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            autoFocus
           />
         )}
-        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-          {users.map((u) => (
-            <label key={u.id} className="member-row">
-              <input
-                type="checkbox"
-                checked={selected.includes(u.id)}
-                onChange={() => toggle(u.id)}
-              />
-              {u.username}
-            </label>
-          ))}
-        </div>
+
+        {loadingUsers ? (
+          <div className="empty">Chargement des utilisateurs…</div>
+        ) : users.length === 0 ? (
+          <div className="empty">Aucun utilisateur disponible.</div>
+        ) : (
+          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+            {users.map((u) => (
+              <label key={u.id} className="member-row">
+                <input
+                  type={isGroup ? 'checkbox' : 'radio'}
+                  name={isGroup ? undefined : 'private-user'}
+                  checked={selected.includes(u.id)}
+                  onChange={() => toggle(u.id)}
+                />
+                {u.username}
+              </label>
+            ))}
+          </div>
+        )}
+
         {error && <div className="error">{error}</div>}
+
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="btn btn-ghost" onClick={onClose}>
+          <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>
             Annuler
           </button>
-          <button className="btn" onClick={submit}>
-            Créer
+          <button
+            className="btn"
+            onClick={submit}
+            disabled={submitting || loadingUsers}
+          >
+            {submitting ? 'Création…' : 'Créer'}
           </button>
         </div>
       </div>

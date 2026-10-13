@@ -40,9 +40,12 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   options.signal = controller.signal;
 
+  const url = `${API_URL}${path}`;
+  console.log(`[API] ${method} ${url}`);
+
   let res;
   try {
-    res = await fetch(`${API_URL}${path}`, options);
+    res = await fetch(url, options);
   } catch (err) {
     if (err.name === "AbortError") {
       throw new Error(
@@ -61,13 +64,13 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    console.error("[API ERROR]", res.status, method, path, data);
+    console.error("[API ERROR]", res.status, method, url, data);
 
     const msg =
       data?.detail ||
       data?.error ||
       (data && Object.values(data).flat().join(" ")) ||
-      `Erreur ${res.status}`;
+      `Erreur ${res.status} sur ${method} ${url}`;
 
     throw new Error(msg);
   }
@@ -97,24 +100,9 @@ export const api = {
   me: () => request("/auth/me/"),
 
   logout: () => request("/auth/logout/", { method: "POST" }),
-  changePassword: (payload) =>
-    request("/auth/change-password/", {
-      method: "POST",
-      body: payload,
-    }),
-  changeEmail: (payload) =>
-    request("/auth/change-email/", {
-      method: "POST",
-      body: payload,
-    }),
 
   changePassword: (payload) =>
     request("/auth/change-password/", {
-      method: "POST",
-      body: payload,
-    }),
-  changeEmail: (payload) =>
-    request("/auth/change-email/", {
       method: "POST",
       body: payload,
     }),
@@ -124,6 +112,9 @@ export const api = {
       method: "POST",
       body: payload,
     }),
+
+  deleteAccount: () =>
+    request("/auth/delete-account/", { method: "DELETE" }),
 
   // ---------- USERS ----------
   listUsers: () => request("/auth/users/"),
@@ -131,21 +122,19 @@ export const api = {
   // ---------- CONVERSATIONS ----------
   listConversations: () => request("/conversations/"),
 
-  // ✅ Validation synchrone + routage privée/groupe
-  createConversation: (payload) => {
-    if (!payload.user_id && !payload.member_ids) {
-      throw new Error("Payload de conversation invalide");
-    }
-
-    return request(
-      payload.member_ids === undefined
-        ? "/conversations/private/"
-        : "/conversations/group/",
-      { method: "POST", body: payload },
-    );
-  },
-
   getConversation: (id) => request(`/conversations/${id}/`),
+
+  createPrivateConversation: (userId) =>
+    request("/conversations/private/", {
+      method: "POST",
+      body: { user_id: userId },
+    }),
+
+  createGroupConversation: (name, memberIds) =>
+    request("/conversations/group/", {
+      method: "POST",
+      body: { name, member_ids: memberIds },
+    }),
 
   addMember: (id, userId) =>
     request(`/conversations/${id}/members/`, {
@@ -158,7 +147,11 @@ export const api = {
       method: "DELETE",
     }),
 
+  markRead: (id) =>
+    request(`/conversations/${id}/read/`, { method: "POST" }),
+
   // ---------- MESSAGES ----------
+  // Liste + envoi : imbriqués sous la conversation
   listMessages: (convId, page = 1) =>
     request(`/conversations/${convId}/messages/?page=${page}`),
 
@@ -168,14 +161,15 @@ export const api = {
       body: { content },
     }),
 
-  editMessage: (convId, msgId, content) =>
-    request(`/conversations/${convId}/messages/${msgId}/`, {
+  // ⚠️ Édition + suppression : route PLATE /api/messages/<id>/
+  editMessage: (msgId, content) =>
+    request(`/messages/${msgId}/`, {
       method: "PATCH",
       body: { content },
     }),
 
-  deleteMessage: (convId, msgId) =>
-    request(`/conversations/${convId}/messages/${msgId}/`, {
+  deleteMessage: (msgId) =>
+    request(`/messages/${msgId}/`, {
       method: "DELETE",
     }),
 };

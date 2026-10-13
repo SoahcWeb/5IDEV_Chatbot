@@ -16,9 +16,15 @@ from .serializers import (
 from .unread import with_unread_count
 
 
+# ============================================================
+#  HELPER
+# ============================================================
 def conversations_for(user):
+    """Retourne les conversations accessibles par l'utilisateur,
+    annotées avec le unread_count."""
     queryset = (
-        Conversation.objects.filter(memberships__user=user)
+        Conversation.objects
+        .filter(memberships__user=user)
         .select_related('created_by')
         .prefetch_related('memberships__user')
         .distinct()
@@ -26,13 +32,20 @@ def conversations_for(user):
     return with_unread_count(queryset, user)
 
 
+# ============================================================
+#  LISTE
+# ============================================================
 class ConversationListView(generics.ListAPIView):
     serializer_class = ConversationSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return conversations_for(self.request.user)
 
 
+# ============================================================
+#  DÉTAIL
+# ============================================================
 class ConversationDetailView(generics.RetrieveAPIView):
     serializer_class = ConversationSerializer
     permission_classes = [IsAuthenticated, IsConversationMember]
@@ -41,7 +54,12 @@ class ConversationDetailView(generics.RetrieveAPIView):
         return conversations_for(self.request.user)
 
 
+# ============================================================
+#  CRÉATION PRIVÉE
+# ============================================================
 class CreatePrivateConversationView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         serializer = CreatePrivateConversationSerializer(
             data=request.data,
@@ -49,9 +67,13 @@ class CreatePrivateConversationView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         conversation = serializer.save()
+
         response_status = (
-            status.HTTP_201_CREATED if serializer.was_created else status.HTTP_200_OK
+            status.HTTP_201_CREATED
+            if getattr(serializer, 'was_created', True)
+            else status.HTTP_200_OK
         )
+
         return Response(
             ConversationSerializer(
                 conversation,
@@ -61,7 +83,12 @@ class CreatePrivateConversationView(APIView):
         )
 
 
+# ============================================================
+#  CRÉATION GROUPE
+# ============================================================
 class CreateGroupConversationView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         serializer = CreateGroupConversationSerializer(
             data=request.data,
@@ -69,6 +96,7 @@ class CreateGroupConversationView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         conversation = serializer.save()
+
         return Response(
             ConversationSerializer(
                 conversation,
@@ -78,12 +106,19 @@ class CreateGroupConversationView(APIView):
         )
 
 
+# ============================================================
+#  AJOUT MEMBRE (admin seulement)
+# ============================================================
 class AddConversationMemberView(APIView):
     permission_classes = [IsAuthenticated, IsConversationAdmin]
 
     def post(self, request, pk):
-        conversation = get_object_or_404(conversations_for(request.user), pk=pk)
+        conversation = get_object_or_404(
+            conversations_for(request.user),
+            pk=pk,
+        )
         self.check_object_permissions(request, conversation)
+
         if conversation.type != Conversation.Type.GROUP:
             return Response(
                 {'detail': 'Members can only be added to group conversations.'},
@@ -96,6 +131,7 @@ class AddConversationMemberView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         membership = serializer.save()
+
         return Response(
             ConversationSerializer(
                 membership.conversation,
@@ -105,6 +141,9 @@ class AddConversationMemberView(APIView):
         )
 
 
+# ============================================================
+#  MARQUER COMME LU
+# ============================================================
 class MarkConversationReadView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -122,12 +161,19 @@ class MarkConversationReadView(APIView):
         })
 
 
+# ============================================================
+#  RETIRER MEMBRE (admin seulement)
+# ============================================================
 class RemoveConversationMemberView(APIView):
     permission_classes = [IsAuthenticated, IsConversationAdmin]
 
     def delete(self, request, pk, user_id):
-        conversation = get_object_or_404(conversations_for(request.user), pk=pk)
+        conversation = get_object_or_404(
+            conversations_for(request.user),
+            pk=pk,
+        )
         self.check_object_permissions(request, conversation)
+
         if conversation.type != Conversation.Type.GROUP:
             return Response(
                 {'detail': 'Members can only be removed from group conversations.'},
@@ -138,6 +184,8 @@ class RemoveConversationMemberView(APIView):
             conversation.memberships,
             user_id=user_id,
         )
+
+        # Empêcher le retrait du dernier admin
         if (
             membership.role == ConversationMember.Role.ADMIN
             and conversation.memberships.filter(
@@ -146,6 +194,13 @@ class RemoveConversationMemberView(APIView):
         ):
             return Response(
                 {'detail': 'The last group admin cannot be removed.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Empêcher un admin de se retirer lui-même par erreur
+        if membership.user_id == request.user.id:
+            return Response(
+                {'detail': "Vous ne pouvez pas vous retirer vous-même du groupe."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

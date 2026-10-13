@@ -4,6 +4,7 @@ from .views import (
     ChangeEmailView,
     ChangePasswordView,
     CurrentUserView,
+    DeleteAccountView,        # ← AJOUT
     LoginView,
     LogoutView,
     RegisterView,
@@ -20,5 +21,6 @@ urlpatterns = [
     path('me/', CurrentUserView.as_view(), name='me'),
     path('change-password/', ChangePasswordView.as_view(), name='change-password'),
     path('change-email/', ChangeEmailView.as_view(), name='change-email'),
+    path('delete-account/', DeleteAccountView.as_view(), name='delete-account'),   # ← AJOUT
     path('users/', UserListView.as_view(), name='user-list'),
 ]
