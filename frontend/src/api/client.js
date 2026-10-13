@@ -4,7 +4,8 @@
 //  Clé localStorage : "auth_token"
 // ============================================================
 
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+const API_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 const TOKEN_KEY = "auth_token";
 const TIMEOUT_MS = 8000;
@@ -35,17 +36,13 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
     options.body = JSON.stringify(body);
   }
 
-  // Timeout pour ne jamais bloquer indéfiniment
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   options.signal = controller.signal;
 
-  const url = `${API_URL}${path}`;
-  console.log(`[API] ${method} ${url}`);
-
   let res;
   try {
-    res = await fetch(url, options);
+    res = await fetch(`${API_URL}${path}`, options);
   } catch (err) {
     if (err.name === "AbortError") {
       throw new Error(
@@ -64,15 +61,18 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    console.error("[API ERROR]", res.status, method, url, data);
-
     const msg =
       data?.detail ||
       data?.error ||
       (data && Object.values(data).flat().join(" ")) ||
-      `Erreur ${res.status} sur ${method} ${url}`;
+      `Erreur ${res.status}`;
 
-    throw new Error(msg);
+    // ⚠️ On expose le status HTTP pour que ConversationView
+    // puisse détecter les 404 (messages fantômes).
+    const error = new Error(msg);
+    error.status = res.status;
+    error.data = data;
+    throw error;
   }
 
   return data;
@@ -102,16 +102,10 @@ export const api = {
   logout: () => request("/auth/logout/", { method: "POST" }),
 
   changePassword: (payload) =>
-    request("/auth/change-password/", {
-      method: "POST",
-      body: payload,
-    }),
+    request("/auth/change-password/", { method: "POST", body: payload }),
 
   changeEmail: (payload) =>
-    request("/auth/change-email/", {
-      method: "POST",
-      body: payload,
-    }),
+    request("/auth/change-email/", { method: "POST", body: payload }),
 
   deleteAccount: () =>
     request("/auth/delete-account/", { method: "DELETE" }),
@@ -124,7 +118,6 @@ export const api = {
 
   getConversation: (id) => request(`/conversations/${id}/`),
 
-  // Méthode générique (tests CI) : route vers private/ ou group/
   createConversation: (payload) => {
     if (
       !payload ||
@@ -164,15 +157,12 @@ export const api = {
     }),
 
   removeMember: (id, userId) =>
-    request(`/conversations/${id}/members/${userId}/`, {
-      method: "DELETE",
-    }),
+    request(`/conversations/${id}/members/${userId}/`, { method: "DELETE" }),
 
   markRead: (id) =>
     request(`/conversations/${id}/read/`, { method: "POST" }),
 
   // ---------- MESSAGES ----------
-  // Liste + envoi : imbriqués sous la conversation
   listMessages: (convId, page = 1) =>
     request(`/conversations/${convId}/messages/?page=${page}`),
 
@@ -182,7 +172,6 @@ export const api = {
       body: { content },
     }),
 
-  // Édition + suppression : route PLATE /api/messages/<id>/
   editMessage: (msgId, content) =>
     request(`/messages/${msgId}/`, {
       method: "PATCH",
@@ -190,10 +179,7 @@ export const api = {
     }),
 
   deleteMessage: (msgId) =>
-    request(`/messages/${msgId}/`, {
-      method: "DELETE",
-    }),
+    request(`/messages/${msgId}/`, { method: "DELETE" }),
 };
 
-// Export par défaut (compatibilité)
 export default api;

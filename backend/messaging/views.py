@@ -8,7 +8,11 @@ from .models import Message
 from .pagination import MessagePagination
 from .permissions import IsMessageAuthor
 from .serializers import CreateMessageSerializer, MessageSerializer
-from .services import create_and_broadcast_message
+from .services import (
+    create_and_broadcast_message,
+    delete_and_broadcast_message,
+    update_and_broadcast_message,
+)
 
 
 def conversation_for(user, conversation_id):
@@ -67,4 +71,18 @@ class MessageDetailView(generics.RetrieveUpdateDestroyAPIView):
             )
             .select_related('author', 'conversation')
             .distinct()
+        )
+
+    def perform_update(self, serializer):
+        # Broadcast la mise à jour aux autres clients
+        update_and_broadcast_message(
+            message=self.get_object(),
+            serializer=serializer,
+        )
+
+    def perform_destroy(self, instance):
+        # Broadcast la suppression aux autres clients
+        delete_and_broadcast_message(
+            message=instance,
+            user=self.request.user,
         )

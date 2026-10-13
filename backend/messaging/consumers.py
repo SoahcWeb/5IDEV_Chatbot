@@ -31,7 +31,6 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             )
 
     async def receive_json(self, content, **kwargs):
-        # This socket is server-to-client only for now.
         return
 
     async def notification_message(self, event):
@@ -119,9 +118,24 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.send_error('invalid_message', str(detail))
             return
 
+    # ---------- Handlers d'événements serveur → client ----------
+
     async def chat_message(self, event):
         await self.send_json({
             'type': 'message.created',
+            'message': event['message'],
+        })
+
+    async def chat_message_deleted(self, event):
+        await self.send_json({
+            'type': 'message.deleted',
+            'message_id': event['message_id'],
+            'conversation': event['conversation'],
+        })
+
+    async def chat_message_updated(self, event):
+        await self.send_json({
+            'type': 'message.updated',
             'message': event['message'],
         })
 

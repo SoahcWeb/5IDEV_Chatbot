@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { api, getToken } from '../api/client.js'
 import { useConversationSocket } from '../useConversationSocket.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -15,10 +15,13 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   const [allUsers, setAllUsers] = useState([])
   const [membersLocal, setMembersLocal] = useState(conversation.members ?? [])
 
+  // 🔒 Set des IDs supprimés localement (pour filtrer les retours WS)
+  const deletedIdsRef = useRef(new Set())
+
   // ---------- Récupération des messages (REST) ----------
   const reload = useCallback(async () => {
     setLoading(true)
-    setMessages([])             // ⚠️ Vide AVANT le fetch (évite le mélange visuel)
+    setMessages([])
     setError('')
     try {
       const data = await api.listMessages(conversation.id)
@@ -31,19 +34,22 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     }
   }, [conversation.id])
 
-  // Reset global + reload quand on change de conversation
+  // Reset + reload UNIQUEMENT au changement de conversation
   useEffect(() => {
+    deletedIdsRef.current = new Set()
     setMembersOpen(false)
     setAddMemberOpen(false)
     setMembersLocal(conversation.members ?? [])
     setError('')
     reload()
-  }, [conversation.id, reload])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id])
 
   // ---------- WebSocket ----------
   const {
     status: socketStatus,
     messages: socketMessages,
+    events: socketEvents,
     error: socketError,
     sendMessage,
     markConversationRead,
@@ -55,14 +61,14 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     onReconnect: reload,
   })
 
-  // ---------- Fusion des messages WS (FILTRÉE par conversation) ----------
+  // ---------- Fusion des messages WS (filtrée) ----------
   useEffect(() => {
     if (socketMessages.length === 0) return
-
     setMessages((current) => {
-      // 🔒 Filtre strict : on ne garde QUE les messages de cette conversation
       const fromThisConv = socketMessages.filter(
-        (m) => Number(m.conversation) === Number(conversation.id),
+        (m) =>
+          Number(m.conversation) === Number(conversation.id) &&
+          !deletedIdsRef.current.has(m.id),
       )
       if (fromThisConv.length === 0) return current
 
@@ -72,10 +78,27 @@ export default function ConversationView({ conversation, onBack, onRead }) {
       )
       const currentIds = new Set(current.map((m) => m.id))
       const newMessages = fromThisConv.filter((m) => !currentIds.has(m.id))
-
       return newMessages.length > 0 ? [...merged, ...newMessages] : merged
     })
-  }, [socketMessages, conversation.id])   // ← dépendance conversation.id
+  }, [socketMessages, conversation.id])
+
+  // ---------- Traitement des événements WS (deleted / updated) ----------
+  useEffect(() => {
+    if (!socketEvents || socketEvents.length === 0) return
+
+    socketEvents.forEach((ev) => {
+      if (ev.type === 'deleted') {
+        deletedIdsRef.current.add(ev.messageId)
+        setMessages((prev) => prev.filter((m) => m.id !== ev.messageId))
+      } else if (ev.type === 'updated' && ev.message) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === ev.message.id ? { ...m, ...ev.message } : m,
+          ),
+        )
+      }
+    })
+  }, [socketEvents])
 
   // ---------- Marquage "lu" ----------
   useEffect(() => {
@@ -84,7 +107,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
       !document.hasFocus() ||
       document.visibilityState !== 'visible'
     ) return
-    markConversationRead()
+    markConversationRead?.()
   }, [markConversationRead, socketMessages])
 
   useEffect(() => {
@@ -93,32 +116,7 @@ export default function ConversationView({ conversation, onBack, onRead }) {
       document.hasFocus() &&
       document.visibilityState === 'visible'
     ) {
-      markConversationRead()
-    }
-  }, [markConversationRead, socketStatus])
-
-  useEffect(() => {
-    if (socketStatus !== 'open') return undefined
-
-    let wasFocused = document.hasFocus() && document.visibilityState === 'visible'
-    const markReadWhenFocused = () => {
-      const isFocused = document.hasFocus() && document.visibilityState === 'visible'
-      if (!isFocused) {
-        wasFocused = false
-        return
-      }
-      if (wasFocused) return
-      wasFocused = true
-      markConversationRead()
-    }
-
-    window.addEventListener('focus', markReadWhenFocused)
-    window.addEventListener('blur', markReadWhenFocused)
-    document.addEventListener('visibilitychange', markReadWhenFocused)
-    return () => {
-      window.removeEventListener('focus', markReadWhenFocused)
-      window.removeEventListener('blur', markReadWhenFocused)
-      document.removeEventListener('visibilitychange', markReadWhenFocused)
+      markConversationRead?.()
     }
   }, [markConversationRead, socketStatus])
 
@@ -126,9 +124,10 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     if (socketError) setError(socketError.detail || 'Erreur WebSocket')
   }, [socketError])
 
-  // Fallback REST : marquer comme lu à l'ouverture
   useEffect(() => {
-    api.markRead(conversation.id).catch(() => {})
+    if (typeof api?.markRead !== 'function') return
+    const p = api.markRead(conversation.id)
+    if (p && typeof p.catch === 'function') p.catch(() => {})
   }, [conversation.id])
 
   // ---------- Envoi ----------
@@ -140,30 +139,51 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     }
   }
 
-  // ---------- Édition (route PLATE) ----------
+  // ---------- Édition (retrait optimiste) ----------
   const handleEdit = async (msgId, content) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, content } : m)),
+    )
+
     try {
+      if (typeof api.editMessage !== 'function') {
+        throw new Error("Fonction d'édition indisponible.")
+      }
       const updated = await api.editMessage(msgId, content)
       setMessages((prev) =>
         prev.map((m) => (m.id === msgId ? { ...m, ...updated } : m)),
       )
     } catch (e) {
+      if (e.status === 404) {
+        deletedIdsRef.current.add(msgId)
+        setMessages((prev) => prev.filter((m) => m.id !== msgId))
+        return
+      }
       setError(e.message)
+      reload()
     }
   }
 
-  // ---------- Suppression (route PLATE) ----------
+  // ---------- Suppression (retrait optimiste + track) ----------
   const handleDelete = async (msgId) => {
+    deletedIdsRef.current.add(msgId)
+    setMessages((prev) => prev.filter((m) => m.id !== msgId))
+
     try {
+      if (typeof api.deleteMessage !== 'function') {
+        throw new Error('Fonction de suppression indisponible.')
+      }
       await api.deleteMessage(msgId)
-      setMessages((prev) => prev.filter((m) => m.id !== msgId))
     } catch (e) {
+      if (e.status === 404) return
       setError(e.message)
+      reload()
     }
   }
 
   // ---------- Membres ----------
-  const isAdmin = membersLocal.find((m) => m.user === user?.id)?.role === 'admin'
+  const isAdmin =
+    membersLocal.find((m) => m.user === user?.id)?.role === 'admin'
 
   const openAddMember = async () => {
     setAddMemberOpen(true)
@@ -199,13 +219,19 @@ export default function ConversationView({ conversation, onBack, onRead }) {
   }
 
   const title =
-    conversation.name || conversation.title || `Conversation #${conversation.id}`
+    conversation.name ||
+    conversation.title ||
+    `Conversation #${conversation.id}`
   const isGroup = conversation.type === 'group'
 
   return (
     <div className="main">
       <div className="chat-header">
-        <button className="btn btn-ghost back" onClick={onBack} aria-label="Retour">
+        <button
+          className="btn btn-ghost back"
+          onClick={onBack}
+          aria-label="Retour"
+        >
           ←
         </button>
         <div style={{ flex: 1 }}>
@@ -222,7 +248,9 @@ export default function ConversationView({ conversation, onBack, onRead }) {
             type="button"
             aria-controls="conversation-members"
             aria-expanded={membersOpen}
-            aria-label={membersOpen ? 'Masquer les membres' : 'Afficher les membres'}
+            aria-label={
+              membersOpen ? 'Masquer les membres' : 'Afficher les membres'
+            }
             onClick={() => setMembersOpen((open) => !open)}
           >
             Membres
@@ -254,14 +282,24 @@ export default function ConversationView({ conversation, onBack, onRead }) {
               {membersLocal.map((member) => (
                 <li key={member.id}>
                   <span>{member.username}</span>
-                  <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--muted)' }}>
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 12,
+                      color: 'var(--muted)',
+                    }}
+                  >
                     {member.role === 'admin' ? '👑' : ''}
                   </span>
                   {isAdmin && member.user !== user?.id && (
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      style={{ padding: '2px 6px', fontSize: 11, marginLeft: 8 }}
+                      style={{
+                        padding: '2px 6px',
+                        fontSize: 11,
+                        marginLeft: 8,
+                      }}
                       onClick={() => handleRemoveMember(member.user)}
                       aria-label={`Retirer ${member.username}`}
                     >
@@ -273,7 +311,11 @@ export default function ConversationView({ conversation, onBack, onRead }) {
             </ul>
 
             {isAdmin && (
-              <button className="btn" onClick={openAddMember} style={{ marginTop: 8 }}>
+              <button
+                className="btn"
+                onClick={openAddMember}
+                style={{ marginTop: 8 }}
+              >
                 + Ajouter un membre
               </button>
             )}
@@ -281,9 +323,11 @@ export default function ConversationView({ conversation, onBack, onRead }) {
         )}
       </div>
 
-      {/* ---------- Modale : ajouter un membre ---------- */}
       {addMemberOpen && (
-        <div className="modal-backdrop" onClick={() => setAddMemberOpen(false)}>
+        <div
+          className="modal-backdrop"
+          onClick={() => setAddMemberOpen(false)}
+        >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>Ajouter un membre</h2>
 
@@ -310,8 +354,17 @@ export default function ConversationView({ conversation, onBack, onRead }) {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-              <button className="btn btn-ghost" onClick={() => setAddMemberOpen(false)}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                marginTop: 8,
+              }}
+            >
+              <button
+                className="btn btn-ghost"
+                onClick={() => setAddMemberOpen(false)}
+              >
                 Annuler
               </button>
             </div>
