@@ -35,17 +35,13 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
     options.body = JSON.stringify(body);
   }
 
-  // Timeout pour ne jamais bloquer indéfiniment
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   options.signal = controller.signal;
 
-  const url = `${API_URL}${path}`;
-  console.log(`[API] ${method} ${url}`);
-
   let res;
   try {
-    res = await fetch(url, options);
+    res = await fetch(`${API_URL}${path}`, options);
   } catch (err) {
     if (err.name === "AbortError") {
       throw new Error(
@@ -64,13 +60,11 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    console.error("[API ERROR]", res.status, method, url, data);
-
     const msg =
       data?.detail ||
       data?.error ||
       (data && Object.values(data).flat().join(" ")) ||
-      `Erreur ${res.status} sur ${method} ${url}`;
+      `Erreur ${res.status}`;
 
     throw new Error(msg);
   }
@@ -84,34 +78,20 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
 export const api = {
   // ---------- AUTH ----------
   register: (payload) =>
-    request("/auth/register/", {
-      method: "POST",
-      body: payload,
-      auth: false,
-    }),
+    request("/auth/register/", { method: "POST", body: payload, auth: false }),
 
   login: (payload) =>
-    request("/auth/login/", {
-      method: "POST",
-      body: payload,
-      auth: false,
-    }),
+    request("/auth/login/", { method: "POST", body: payload, auth: false }),
 
   me: () => request("/auth/me/"),
 
   logout: () => request("/auth/logout/", { method: "POST" }),
 
   changePassword: (payload) =>
-    request("/auth/change-password/", {
-      method: "POST",
-      body: payload,
-    }),
+    request("/auth/change-password/", { method: "POST", body: payload }),
 
   changeEmail: (payload) =>
-    request("/auth/change-email/", {
-      method: "POST",
-      body: payload,
-    }),
+    request("/auth/change-email/", { method: "POST", body: payload }),
 
   deleteAccount: () =>
     request("/auth/delete-account/", { method: "DELETE" }),
@@ -124,7 +104,7 @@ export const api = {
 
   getConversation: (id) => request(`/conversations/${id}/`),
 
-  // Méthode générique (tests CI) : route vers private/ ou group/
+  // Méthode générique (tests CI)
   createConversation: (payload) => {
     if (
       !payload ||
@@ -164,15 +144,13 @@ export const api = {
     }),
 
   removeMember: (id, userId) =>
-    request(`/conversations/${id}/members/${userId}/`, {
-      method: "DELETE",
-    }),
+    request(`/conversations/${id}/members/${userId}/`, { method: "DELETE" }),
 
+  // ⚠️ ESSENTIEL — utilisé par ConversationView
   markRead: (id) =>
     request(`/conversations/${id}/read/`, { method: "POST" }),
 
   // ---------- MESSAGES ----------
-  // Liste + envoi : imbriqués sous la conversation
   listMessages: (convId, page = 1) =>
     request(`/conversations/${convId}/messages/?page=${page}`),
 
@@ -182,7 +160,7 @@ export const api = {
       body: { content },
     }),
 
-  // Édition + suppression : route PLATE /api/messages/<id>/
+  // Édition / suppression : route PLATE
   editMessage: (msgId, content) =>
     request(`/messages/${msgId}/`, {
       method: "PATCH",
@@ -190,9 +168,7 @@ export const api = {
     }),
 
   deleteMessage: (msgId) =>
-    request(`/messages/${msgId}/`, {
-      method: "DELETE",
-    }),
+    request(`/messages/${msgId}/`, { method: "DELETE" }),
 };
 
 // Export par défaut (compatibilité)
