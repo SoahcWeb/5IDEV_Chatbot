@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: './test/setupTests.js',
+    setupFiles: './test/setupTests.js',   // ← chemin correct
+    isolate: false,                        // ← évite le warning JSDOM
   },
 })
