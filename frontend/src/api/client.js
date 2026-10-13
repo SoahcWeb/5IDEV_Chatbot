@@ -124,6 +124,27 @@ export const api = {
 
   getConversation: (id) => request(`/conversations/${id}/`),
 
+  // Méthode générique (tests CI) : route vers private/ ou group/
+  createConversation: (payload) => {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      (!payload.name && !payload.member_ids && !payload.user_id)
+    ) {
+      throw new Error("Payload de conversation invalide");
+    }
+    if (payload.user_id && !payload.member_ids) {
+      return request("/conversations/private/", {
+        method: "POST",
+        body: payload,
+      });
+    }
+    return request("/conversations/group/", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
   createPrivateConversation: (userId) =>
     request("/conversations/private/", {
       method: "POST",
@@ -161,7 +182,7 @@ export const api = {
       body: { content },
     }),
 
-  // ⚠️ Édition + suppression : route PLATE /api/messages/<id>/
+  // Édition + suppression : route PLATE /api/messages/<id>/
   editMessage: (msgId, content) =>
     request(`/messages/${msgId}/`, {
       method: "PATCH",
@@ -173,3 +194,6 @@ export const api = {
       method: "DELETE",
     }),
 };
+
+// Export par défaut (compatibilité)
+export default api;
