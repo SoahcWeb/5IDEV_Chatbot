@@ -136,12 +136,25 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     if (socketError) setError(socketError.detail || 'Erreur WebSocket')
   }, [socketError])
 
-  // ---------- Envoi ----------
+  // ---------- Envoi (WS + fallback REST) ----------
   const handleSend = async (content) => {
-    try {
-      sendMessage(content)
-    } catch (e) {
-      setError(e.message)
+    const text = (content ?? '').trim()
+    if (!text) return
+
+    // 1. Tentative via WebSocket
+    const sent = sendMessage(text)
+
+    // 2. Si WS pas prêt → fallback REST
+    if (!sent) {
+      try {
+        const msg = await api.sendMessage(conversation.id, text)
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev
+          return [...prev, msg]
+        })
+      } catch (e) {
+        setError(e.message)
+      }
     }
   }
 
