@@ -1,7 +1,5 @@
 // ============================================================
 //  API CLIENT — Django + DRF authtoken
-//  Header : Authorization: Token xxx
-//  Clé localStorage : "auth_token"
 // ============================================================
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
@@ -9,7 +7,6 @@ const API_URL = import.meta.env.VITE_API_URL || "/api";
 const TOKEN_KEY = "auth_token";
 const TIMEOUT_MS = 8000;
 
-// ---------- Token ----------
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 
 export const setToken = (t) => {
@@ -35,7 +32,6 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
     options.body = JSON.stringify(body);
   }
 
-  // Timeout pour ne jamais bloquer indéfiniment
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   options.signal = controller.signal;
@@ -61,91 +57,89 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
-    console.error("[API ERROR]", res.status, method, path, data);
-
     const msg =
       data?.detail ||
       data?.error ||
       (data && Object.values(data).flat().join(" ")) ||
       `Erreur ${res.status}`;
 
-    throw new Error(msg);
+    const error = new Error(msg);
+    error.status = res.status;
+    error.data = data;
+    throw error;
   }
 
   return data;
 }
 
 // ============================================================
+//  HELPER — createConversation générique
+// ============================================================
+function createConversation(payload) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Payload de conversation invalide");
+  }
+
+  // Cas 1 : payload groupe (member_ids présent)
+  if (Array.isArray(payload.member_ids)) {
+    return request("/conversations/group/", {
+      method: "POST",
+      body: {
+        name: payload.name,
+        member_ids: payload.member_ids,
+      },
+    });
+  }
+
+  // Cas 2 : payload privé (user_id présent)
+  if (payload.user_id) {
+    return request("/conversations/private/", {
+      method: "POST",
+      body: { user_id: payload.user_id },
+    });
+  }
+
+  // Cas 3 : payload vide → erreur
+  throw new Error("Payload de conversation invalide");
+}
+
+// ============================================================
 //  ENDPOINTS
 // ============================================================
 export const api = {
-  // ---------- AUTH ----------
+  // AUTH
   register: (payload) =>
-    request("/auth/register/", {
-      method: "POST",
-      body: payload,
-      auth: false,
-    }),
-
+    request("/auth/register/", { method: "POST", body: payload, auth: false }),
   login: (payload) =>
-    request("/auth/login/", {
-      method: "POST",
-      body: payload,
-      auth: false,
-    }),
-
+    request("/auth/login/", { method: "POST", body: payload, auth: false }),
   me: () => request("/auth/me/"),
-
   logout: () => request("/auth/logout/", { method: "POST" }),
   changePassword: (payload) =>
-    request("/auth/change-password/", {
-      method: "POST",
-      body: payload,
-    }),
+    request("/auth/change-password/", { method: "POST", body: payload }),
   changeEmail: (payload) =>
-    request("/auth/change-email/", {
-      method: "POST",
-      body: payload,
-    }),
+    request("/auth/change-email/", { method: "POST", body: payload }),
+  deleteAccount: () =>
+    request("/auth/delete-account/", { method: "DELETE" }),
 
-  changePassword: (payload) =>
-    request("/auth/change-password/", {
-      method: "POST",
-      body: payload,
-    }),
-  changeEmail: (payload) =>
-    request("/auth/change-email/", {
-      method: "POST",
-      body: payload,
-    }),
-
-  changeEmail: (payload) =>
-    request("/auth/change-email/", {
-      method: "POST",
-      body: payload,
-    }),
-
-  // ---------- USERS ----------
+  // USERS
   listUsers: () => request("/auth/users/"),
 
-  // ---------- CONVERSATIONS ----------
+  // CONVERSATIONS
   listConversations: () => request("/conversations/"),
-
-  // ✅ Validation synchrone + routage privée/groupe
-  createConversation: (payload) => {
-    if (!payload.user_id && !payload.member_ids) {
-      throw new Error("Payload de conversation invalide");
-    }
-
-    return request(
-      payload.member_ids === undefined
-        ? "/conversations/private/"
-        : "/conversations/group/",
-      { method: "POST", body: payload },
-    );
-  },
-
   getConversation: (id) => request(`/conversations/${id}/`),
+  createConversation,
+
+  createPrivateConversation: (userId) =>
+    request("/conversations/private/", {
+      method: "POST",
+      body: { user_id: userId },
+    }),
+
+  createGroupConversation: (name, memberIds) =>
+    request("/conversations/group/", {
+      method: "POST",
+      body: { name, member_ids: memberIds },
+    }),
 
   addMember: (id, userId) =>
     request(`/conversations/${id}/members/`, {
@@ -158,24 +152,24 @@ export const api = {
       method: "DELETE",
     }),
 
-  // ---------- MESSAGES ----------
+  markRead: (id) =>
+    request(`/conversations/${id}/read/`, { method: "POST" }),
+
+  // MESSAGES
   listMessages: (convId, page = 1) =>
     request(`/conversations/${convId}/messages/?page=${page}`),
-
   sendMessage: (convId, content) =>
     request(`/conversations/${convId}/messages/`, {
       method: "POST",
       body: { content },
     }),
-
-  editMessage: (convId, msgId, content) =>
-    request(`/conversations/${convId}/messages/${msgId}/`, {
+  editMessage: (msgId, content) =>
+    request(`/messages/${msgId}/`, {
       method: "PATCH",
       body: { content },
     }),
-
-  deleteMessage: (convId, msgId) =>
-    request(`/conversations/${convId}/messages/${msgId}/`, {
-      method: "DELETE",
-    }),
+  deleteMessage: (msgId) =>
+    request(`/messages/${msgId}/`, { method: "DELETE" }),
 };
+
+export default api;

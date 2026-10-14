@@ -12,8 +12,10 @@ export default function ChatPage() {
   const [showModal, setShowModal] = useState(false)
   const [params, setParams] = useSearchParams()
   const [toast, setToast] = useState(null)
+
   const conversationsRef = useRef(conversations)
   const activeIdRef = useRef(activeId)
+
   const [notificationPermission, setNotificationPermission] = useState(() =>
     typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
   )
@@ -51,17 +53,23 @@ export default function ChatPage() {
   useEffect(() => {
     const event = notificationEvents.at(-1)
     if (!event?.message || !event.conversation) return
+
     const activeConversationIsFocused =
       activeIdRef.current === event.conversation &&
       document.hasFocus() &&
       document.visibilityState === 'visible'
+
+    // ⚠️ CORRECTION : si on est déjà sur la conversation et qu'elle est
+    // focus, on ne touche PAS au state conversations pour ne pas
+    // déclencher un re-render inutile de ConversationView.
+    if (activeConversationIsFocused) return
 
     setConversations((current) =>
       current.map((conversation) =>
         conversation.id === event.conversation
           ? {
               ...conversation,
-              unread_count: activeConversationIsFocused ? 0 : event.unread_count,
+              unread_count: event.unread_count,
               last_message: event.message,
             }
           : conversation,
@@ -73,7 +81,11 @@ export default function ChatPage() {
     )
     if (!conversation) return
 
-    const title = conversation?.name || conversation?.title || `Conversation #${event.conversation}`
+    const title =
+      conversation?.name ||
+      conversation?.title ||
+      `Conversation #${event.conversation}`
+
     setToast({
       id: event.message.id,
       conversationId: event.conversation,

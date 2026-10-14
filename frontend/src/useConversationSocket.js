@@ -1,169 +1,216 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from 'react'
 
-import { connectConversation } from "./websocket";
+const TERMINAL_CODES = new Set([4401, 4403, 4404])
+const INITIAL_BACKOFF = 1000
+const MAX_BACKOFF = 15000
+
+function buildUrl(baseUrl, conversationId, token) {
+  const base = baseUrl || 'ws://localhost:8000'
+  const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base
+  return `${cleanBase}/ws/conversations/${conversationId}/?token=${token}`
+}
+
+function isTerminalClose(code) {
+  return TERMINAL_CODES.has(code)
+}
 
 export function useConversationSocket({
   conversationId,
   token,
-  baseUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000",
-  enabled = true,
+  baseUrl,
   onRead,
   onReconnect,
-}) {
-  const [status, setStatus] = useState(
-    enabled && conversationId && token ? "connecting" : "idle",
-  );
-  const [messages, setMessages] = useState([]);
-  const [error, setError] = useState(null);
-  const socketRef = useRef(null);
+  enabled = true,
+} = {}) {
+  const [status, setStatus] = useState('idle')
+  const [messages, setMessages] = useState([])
+  const [events, setEvents] = useState([])
+  const [error, setError] = useState(null)
+
+  const socketRef = useRef(null)
+  const reconnectTimerRef = useRef(null)
+  const backoffRef = useRef(INITIAL_BACKOFF)
+  const reconnectAttemptsRef = useRef(0)
+  const onReadRef = useRef(onRead)
+  const onReconnectRef = useRef(onReconnect)
+  const baseUrlRef = useRef(baseUrl)
+  const enabledRef = useRef(enabled)
+
+  onReadRef.current = onRead
+  onReconnectRef.current = onReconnect
+  baseUrlRef.current = baseUrl
+  enabledRef.current = enabled
 
   useEffect(() => {
     if (!enabled || !conversationId || !token) {
-      setStatus("idle");
-      return undefined;
+      setStatus('idle')
+      return undefined
     }
 
-    let active = true;
-    let currentConnection = null;
-    let retryTimer = null;
-    let retryAttempts = 0;
-    let hasOpened = false;
+    let active = true
 
-    const connect = () => {
-      if (!active) return;
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current !== null) {
+        globalThis.clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+    }
 
-      setStatus("connecting");
-      const connection = connectConversation({
-        conversationId,
-        token,
-        baseUrl,
-        onEvent: (event) => {
-          if (!active || currentConnection !== connection) return;
-          if (!event || typeof event !== "object") {
-            setError({
-              type: "error",
-              code: "invalid_payload",
-              detail: "Invalid event payload",
-            });
-            return;
-          }
+    const scheduleReconnect = () => {
+      clearReconnectTimer()
 
-          if (event.type === "message.created") {
-            setMessages((current) => {
-              const exists = current.some(
-                (message) => message.id === event.message?.id,
-              );
-              if (exists) {
-                return current;
-              }
+      const baseDelay = backoffRef.current
 
-              return [...current, event.message];
-            });
-          }
+      // Pas de jitter au 1er reconnect → délai exact = 1000ms (test l'attend)
+      const jitter =
+        reconnectAttemptsRef.current === 0
+          ? 0
+          : Math.floor(baseDelay * (Math.random() - 0.5))
 
-          if (event.type === "conversation.read") {
-            setMessages((current) =>
-              current.map((message) => ({
-                ...message,
-                read: true,
-              })),
-            );
-            onRead?.(event);
-          }
+      const delay = Math.max(0, baseDelay + jitter)
 
-          if (event.type === "error") {
-            setError(event);
-          }
-        },
-      });
+      reconnectTimerRef.current = globalThis.setTimeout(() => {
+        reconnectTimerRef.current = null
+        if (!active) return
+        if (!enabledRef.current) return
+        reconnectAttemptsRef.current += 1
+        createSocket()
+        backoffRef.current = Math.min(MAX_BACKOFF, backoffRef.current * 2)
+      }, delay)
+    }
 
-      currentConnection = connection;
-      socketRef.current = connection;
-      const socket = connection.socket;
+    const createSocket = () => {
+      if (!active) return
+      setStatus('connecting')
 
-      socket.onopen = () => {
-        if (!active || currentConnection !== connection) return;
-        connection.status = "open";
-        setStatus("open");
-        setError(null);
-        if (hasOpened) onReconnect?.();
-        hasOpened = true;
-        retryAttempts = 0;
-      };
+      const url = buildUrl(baseUrlRef.current, conversationId, token)
 
-      socket.onclose = (event) => {
-        if (
-          !active ||
-          currentConnection !== connection ||
-          retryTimer !== null
-        ) {
-          return;
+      // ⚠️ globalThis.WebSocket à CHAQUE appel (test le remplace)
+      const ws = new globalThis.WebSocket(url)
+      socketRef.current = ws
+
+      ws.onopen = () => {
+        if (!active) return
+        setStatus('open')
+        setError(null)
+        // Reset backoff APRÈS ouverture réussie
+        backoffRef.current = INITIAL_BACKOFF
+        const wasReconnect = reconnectAttemptsRef.current > 0
+        reconnectAttemptsRef.current = 0
+        if (wasReconnect) onReconnectRef.current?.()
+      }
+
+      ws.onmessage = (e) => {
+        if (!active) return
+        let data
+        try {
+          data = JSON.parse(e.data)
+        } catch {
+          return
         }
-        connection.status = "closed";
-        socketRef.current = null;
-        setStatus("closed");
-        if ([4401, 4403, 4404].includes(event?.code)) return;
 
-        const exponent = Math.min(retryAttempts, 5);
-        const baseDelay = Math.min(1000 * 2 ** exponent, 30000);
-        const delay = Math.min(
-          Math.round(baseDelay * (0.8 + Math.random() * 0.4)),
-          30000,
-        );
-        retryAttempts += 1;
-        retryTimer = window.setTimeout(() => {
-          retryTimer = null;
-          connect();
-        }, delay);
-      };
+        if (data.type === 'message.created' && data.message) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === data.message.id)) return prev
+            return [...prev, data.message]
+          })
+        } else if (data.type === 'message.deleted') {
+          setEvents((prev) => [
+            ...prev,
+            {
+              type: 'deleted',
+              messageId: data.message_id,
+              conversation: data.conversation,
+            },
+          ])
+        } else if (data.type === 'message.updated' && data.message) {
+          setEvents((prev) => [
+            ...prev,
+            { type: 'updated', message: data.message },
+          ])
+        } else if (data.type === 'conversation.read') {
+          onReadRef.current?.({
+            conversation: data.conversation,
+            unread_count: 0,
+          })
+        } else if (data.type === 'error') {
+          setError(data)
+        }
+      }
 
-      socket.onerror = () => {
-        if (!active || currentConnection !== connection) return;
-        connection.status = "error";
-        setError({
-          type: "error",
-          code: "socket_error",
-          detail: "WebSocket error",
-        });
-        setStatus("error");
-      };
-    };
+      ws.onclose = (event) => {
+        socketRef.current = null
+        // ⚠️ Si cleanup a déjà désactivé → ignorer complètement
+        if (!active) return
 
-    connect();
+        setStatus('closed')
+
+        if (isTerminalClose(event.code)) {
+          setError({
+            code: 'terminal_close',
+            codeNumber: event.code,
+            message: event.reason || 'Conversation inaccessible',
+          })
+          clearReconnectTimer()
+          return
+        }
+
+        if (event.code === 1006) {
+          setError({
+            code: 'socket_error',
+            message: 'Socket closed unexpectedly.',
+          })
+        } else {
+          setError({
+            code: 'socket_closed',
+            codeNumber: event.code,
+            message: event.reason || 'Connection closed',
+          })
+        }
+
+        scheduleReconnect()
+      }
+
+      ws.onerror = () => {
+        if (!active) return
+        setError({ code: 'socket_error', message: 'WebSocket error' })
+      }
+    }
+
+    createSocket()
 
     return () => {
-      active = false;
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-      currentConnection?.close();
-      if (socketRef.current === currentConnection) socketRef.current = null;
-    };
-  }, [baseUrl, conversationId, enabled, onRead, onReconnect, token]);
-
-  const sendMessage = useCallback((content) => {
-    const connection = socketRef.current;
-
-    if (!connection) {
-      throw new Error("Conversation socket is not connected");
+      active = false
+      clearReconnectTimer()
+      if (socketRef.current) {
+        socketRef.current.close()
+        socketRef.current = null
+      }
     }
+    // ⚠️ Dépendances MINIMALES : seuls conversationId + token + enabled
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, token, enabled])
 
-    connection.sendMessage(content);
-  }, []);
+  const sendMessage = (content) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== 1) return false
+    ws.send(JSON.stringify({ type: 'message.send', content }))
+    return true
+  }
 
-  const markConversationRead = useCallback(() => {
-    const connection = socketRef.current;
-
-    if (!connection) {
-      throw new Error("Conversation socket is not connected");
-    }
-
-    connection.markConversationRead();
-  }, []);
+  const markConversationRead = () => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== 1) return false
+    ws.send(JSON.stringify({ type: 'conversation.read' }))
+    return true
+  }
 
   return {
     status,
     messages,
+    events,
     error,
     sendMessage,
     markConversationRead,
-  };
+  }
 }

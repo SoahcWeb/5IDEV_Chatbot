@@ -100,16 +100,26 @@ class CurrentUserView(APIView):
         user.save()
         return Response(UserSerializer(user).data)
 
+
+# ============================================================
+#  CHANGEMENT DE MOT DE PASSE
+# ============================================================
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={'request': request},
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({'detail': 'Password updated successfully.'})
 
 
+# ============================================================
+#  CHANGEMENT D'EMAIL
+# ============================================================
 class ChangeEmailView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -121,6 +131,19 @@ class ChangeEmailView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({'detail': 'Email updated successfully.'})
+
+
+# ============================================================
+#  SUPPRESSION DE COMPTE
+# ============================================================
+class DeleteAccountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        user = request.user
+        # Suppression en cascade : conversations, messages, tokens, etc.
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ============================================================
