@@ -5,6 +5,9 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+from conversations.models import Conversation, ConversationMember
+from messaging.models import Message
+
 
 User = get_user_model()
 
@@ -17,6 +20,7 @@ class AuthenticationAPITests(APITestCase):
     users_url = '/api/auth/users/'
     change_password_url = '/api/auth/change-password/'
     change_email_url = '/api/auth/change-email/'
+    delete_account_url = '/api/auth/delete-account/'
 
     def registration_data(self, **overrides):
         data = {
@@ -242,6 +246,160 @@ class AuthenticationAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('email', response.data)
+
+    def test_me_patch_updates_profile_but_ignores_email(self):
+        user = self.create_user()
+        token = Token.objects.create(user=user)
+        self.authenticate_with(token)
+
+        response = self.client.patch(
+            self.me_url,
+            {
+                'first_name': 'John',
+                'last_name': 'Doe',
+                'email': 'bypass@example.com',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertEqual((user.first_name, user.last_name), ('John', 'Doe'))
+        self.assertEqual(user.email, 'john@example.com')
+
+    def test_delete_account_requires_authentication(self):
+        response = self.client.delete(
+            self.delete_account_url,
+            {'password': 'StrongPassword123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_delete_account_rejects_wrong_password(self):
+        user = self.create_user()
+        token = Token.objects.create(user=user)
+        self.authenticate_with(token)
+
+        response = self.client.delete(
+            self.delete_account_url,
+            {'password': 'WrongPassword123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('password', response.data)
+        self.assertTrue(User.objects.filter(pk=user.pk).exists())
+
+    def test_delete_account_preserves_shared_conversation_and_messages(self):
+        user = self.create_user()
+        other = User.objects.create_user('other', password='OtherPassword123!')
+        conversation = Conversation.objects.create(
+            type=Conversation.Type.PRIVATE,
+            created_by=user,
+        )
+        ConversationMember.objects.create(conversation=conversation, user=user)
+        ConversationMember.objects.create(conversation=conversation, user=other)
+        deleted_users_message = Message.objects.create(
+            conversation=conversation,
+            author=user,
+            content='From deleted user',
+        )
+        others_message = Message.objects.create(
+            conversation=conversation,
+            author=other,
+            content='From remaining user',
+        )
+        token = Token.objects.create(user=user)
+        self.authenticate_with(token)
+
+        response = self.client.delete(
+            self.delete_account_url,
+            {'password': 'StrongPassword123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(pk=user.pk).exists())
+        conversation.refresh_from_db()
+        deleted_users_message.refresh_from_db()
+        others_message.refresh_from_db()
+        self.assertIsNone(conversation.created_by)
+        self.assertIsNone(deleted_users_message.author)
+        self.assertEqual(others_message.author, other)
+        self.assertTrue(conversation.memberships.filter(user=other).exists())
+
+    def test_deleting_last_group_admin_promotes_oldest_remaining_member(self):
+        user = self.create_user()
+        oldest = User.objects.create_user('oldest', password='OtherPassword123!')
+        newest = User.objects.create_user('newest', password='OtherPassword123!')
+        conversation = Conversation.objects.create(
+            type=Conversation.Type.GROUP,
+            name='Shared group',
+            created_by=user,
+        )
+        ConversationMember.objects.create(
+            conversation=conversation,
+            user=user,
+            role=ConversationMember.Role.ADMIN,
+        )
+        ConversationMember.objects.create(conversation=conversation, user=oldest)
+        ConversationMember.objects.create(conversation=conversation, user=newest)
+        token = Token.objects.create(user=user)
+        self.authenticate_with(token)
+
+        response = self.client.delete(
+            self.delete_account_url,
+            {'password': 'StrongPassword123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(
+            conversation.memberships.get(user=oldest).role,
+            ConversationMember.Role.ADMIN,
+        )
+        self.assertEqual(
+            conversation.memberships.get(user=newest).role,
+            ConversationMember.Role.MEMBER,
+        )
+
+    def test_deleting_group_creator_keeps_existing_admin_unchanged(self):
+        user = self.create_user()
+        other_admin = User.objects.create_user(
+            'other-admin', password='OtherPassword123!'
+        )
+        conversation = Conversation.objects.create(
+            type=Conversation.Type.GROUP,
+            name='Shared group',
+            created_by=user,
+        )
+        ConversationMember.objects.create(
+            conversation=conversation,
+            user=user,
+            role=ConversationMember.Role.ADMIN,
+        )
+        ConversationMember.objects.create(
+            conversation=conversation,
+            user=other_admin,
+            role=ConversationMember.Role.ADMIN,
+        )
+        token = Token.objects.create(user=user)
+        self.authenticate_with(token)
+
+        response = self.client.delete(
+            self.delete_account_url,
+            {'password': 'StrongPassword123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        conversation.refresh_from_db()
+        self.assertIsNone(conversation.created_by)
+        self.assertEqual(
+            conversation.memberships.get(user=other_admin).role,
+            ConversationMember.Role.ADMIN,
+        )
 
 
 class SeedDemoUsersCommandTests(TestCase):
