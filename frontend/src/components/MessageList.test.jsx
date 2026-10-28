@@ -26,6 +26,22 @@ describe("MessageList", () => {
     );
 
     expect(screen.getByText("bob")).toBeTruthy();
-    expect(screen.queryByText("User")).toBeNull();
+    expect(screen.queryByText("Utilisateur supprimé")).toBeNull();
+  });
+
+  it("shows a deleted-user fallback when the message author is missing", () => {
+    render(
+      <MessageList
+        messages={[
+          { id: 13, author: null, content: "Message conservé" },
+        ]}
+        loading={false}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Utilisateur supprimé")).toBeTruthy();
+    expect(screen.getByText("Message conservé")).toBeTruthy();
   });
 });

@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.db import transaction
 from rest_framework import generics, status
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -8,10 +9,13 @@ from rest_framework.views import APIView
 from .serializers import (
     ChangeEmailSerializer,
     ChangePasswordSerializer,
+    DeleteAccountSerializer,
     RegisterSerializer,
     UserListSerializer,
     UserSerializer,
+    UpdateProfileSerializer,
 )
+from conversations.models import Conversation, ConversationMember
 
 
 User = get_user_model()
@@ -91,14 +95,14 @@ class CurrentUserView(APIView):
         return Response(UserSerializer(request.user).data)
 
     def patch(self, request):
-        """Permet de modifier first_name, last_name, email."""
-        user = request.user
-        allowed = ('first_name', 'last_name', 'email')
-        for field in allowed:
-            if field in request.data:
-                setattr(user, field, request.data[field])
-        user.save()
-        return Response(UserSerializer(user).data)
+        serializer = UpdateProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(UserSerializer(request.user).data)
 
 
 # ============================================================
@@ -139,9 +143,44 @@ class ChangeEmailView(APIView):
 class DeleteAccountView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def delete(self, request):
+        serializer = DeleteAccountSerializer(
+            data=request.data,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+
         user = request.user
-        # Suppression en cascade : conversations, messages, tokens, etc.
+        groups = (
+            Conversation.objects.select_for_update()
+            .filter(
+                pk__in=ConversationMember.objects.filter(
+                    user=user,
+                    role=ConversationMember.Role.ADMIN,
+                    conversation__type=Conversation.Type.GROUP,
+                ).values('conversation_id')
+            )
+        )
+        for group in groups:
+            memberships = list(
+                group.memberships.select_for_update().order_by('joined_at', 'pk')
+            )
+            remaining_memberships = [
+                membership
+                for membership in memberships
+                if membership.user_id != user.pk
+            ]
+            has_another_admin = any(
+                membership.role == ConversationMember.Role.ADMIN
+                for membership in remaining_memberships
+            )
+            if not has_another_admin:
+                if remaining_memberships:
+                    successor = remaining_memberships[0]
+                    successor.role = ConversationMember.Role.ADMIN
+                    successor.save(update_fields=('role',))
+
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

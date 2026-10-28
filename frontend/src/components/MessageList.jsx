@@ -22,7 +22,10 @@ export default function MessageList({ messages, onEdit, onDelete, loading }) {
             {!mine && (
               <div className="meta">
                 <strong>
-                  {m.username ?? m.author?.username ?? m.author_name ?? 'User'}
+                  {m.username ??
+                    m.author?.username ??
+                    m.author_name ??
+                    'Utilisateur supprimé'}
                 </strong>
               </div>
             )}

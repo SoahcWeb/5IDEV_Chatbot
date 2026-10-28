@@ -11,7 +11,8 @@ class Conversation(models.Model):
     name = models.CharField(max_length=255, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
         related_name='created_conversations',
     )
     created_at = models.DateTimeField(auto_now_add=True)
