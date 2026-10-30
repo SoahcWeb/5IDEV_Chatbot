@@ -43,6 +43,28 @@ export default function ConversationView({ conversation, onBack, onRead }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation.id])
 
+  // Marquer immédiatement la conversation comme lue à son ouverture.
+  useEffect(() => {
+    if (
+      !(conversation.unread_count > 0) ||
+      document.visibilityState !== 'visible'
+    ) return undefined
+
+    let active = true
+
+    api.markRead(conversation.id)
+      .then((event) => {
+        if (active) onRead?.(event)
+      })
+      .catch((e) => {
+        if (active) setError(e.message)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [conversation.id, conversation.unread_count, onRead])
+
   // ---------- WebSocket ----------
   const {
     status: socketStatus,

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   api: {
     listConversations: vi.fn(),
     listMessages: vi.fn(),
+    markRead: vi.fn(),
   },
   conversationOptions: { current: null },
   conversationMessages: { current: [] },
@@ -61,6 +62,7 @@ describe("real-time recovery", () => {
     mocks.notificationEvents.current = [];
     mocks.api.listConversations.mockResolvedValue({ results: [] });
     mocks.api.listMessages.mockResolvedValue({ results: [] });
+    mocks.api.markRead.mockResolvedValue({ conversation: 42, unread_count: 0 });
   });
 
   afterEach(() => {
@@ -83,6 +85,33 @@ describe("real-time recovery", () => {
 
     expect(mocks.api.listMessages).toHaveBeenCalledTimes(2);
     expect(mocks.api.listMessages).toHaveBeenLastCalledWith(42);
+  });
+
+  it("marks an unread conversation as read immediately when it is opened", async () => {
+    mocks.api.listConversations.mockResolvedValue({
+      results: [{ id: 42, name: "Projet Alpha", unread_count: 3 }],
+    });
+    mocks.api.markRead.mockResolvedValue({
+      conversation: 42,
+      unread_count: 0,
+    });
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+
+    render(
+      <MemoryRouter>
+        <ChatPage />
+      </MemoryRouter>,
+    );
+
+    const conversation = await screen.findByText("Projet Alpha");
+    const row = conversation.closest(".conv-item");
+    expect(row?.querySelector(".badge")?.textContent).toBe("3");
+
+    fireEvent.click(row);
+
+    await waitFor(() => expect(mocks.api.markRead).toHaveBeenCalledTimes(1));
+    expect(mocks.api.markRead).toHaveBeenCalledWith(42);
+    await waitFor(() => expect(row?.querySelector(".badge")).toBeNull());
   });
 
   it("shows group members and lets the member panel be toggled", async () => {

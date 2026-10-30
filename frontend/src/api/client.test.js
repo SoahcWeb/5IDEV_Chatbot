@@ -54,3 +54,25 @@ describe("api.createConversation", () => {
     );
   });
 });
+
+describe("api.markRead", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts to the conversation read endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: async () => ({ conversation: 42, unread_count: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.markRead(42);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/conversations/42/read/",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+});
