@@ -4,7 +4,7 @@ export default function LandingPage() {
   return (
     <div className="landing">
       <nav className="landing-nav">
-        <div className="logo">💬 Chatbot 5IDEV</div>
+        <div className="logo">💬 TeamPulse</div>
         <div className="actions">
           <Link to="/login" className="btn btn-ghost">Connexion</Link>
           <Link to="/register" className="btn">S'inscrire</Link>
@@ -62,7 +62,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="landing-footer">
-        © {new Date().getFullYear()} Chatbot 5IDEV
+        © {new Date().getFullYear()} TeamPulse
       </footer>
     </div>
   )
